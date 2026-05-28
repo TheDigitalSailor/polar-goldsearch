@@ -1,0 +1,65 @@
+@import url('https://api.fontshare.com/v2/css?f[]=cabinet-grotesk@400,500,600,700,800&display=swap');
+
+@font-face {
+  font-family: 'Masconia';
+  src: url('/fonts/Masconia.woff2') format('woff2'),
+       url('/fonts/Masconia.woff') format('woff');
+  font-weight: normal;
+  font-style: normal;
+  font-display: swap;
+}
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  * {
+    box-sizing: border-box;
+  }
+
+  body {
+    margin: 0;
+    background-color: #4A1942;
+    color: #F5F0E8;
+    font-family: 'Cabinet Grotesk', 'Inter', system-ui, sans-serif;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+
+  #root {
+    min-height: 100svh;
+  }
+}
+
+@layer components {
+  .font-display {
+    font-family: 'Masconia', 'Cormorant Garamond', Georgia, serif;
+  }
+
+  .card {
+    @apply bg-polar-purple-light rounded-xl border border-white/10 p-6;
+  }
+
+  .input-field {
+    @apply w-full bg-polar-purple-dark border border-white/20 rounded-lg px-4 py-3
+           text-polar-cream placeholder-white/30 font-body
+           focus:outline-none focus:border-polar-gold focus:ring-1 focus:ring-polar-gold/50
+           transition-colors;
+  }
+
+  .label {
+    @apply block text-sm font-medium text-polar-cream/70 mb-1.5;
+  }
+
+  .btn-primary {
+    @apply bg-polar-gold hover:bg-polar-gold-light text-polar-purple font-semibold
+           px-6 py-3 rounded-lg transition-colors cursor-pointer
+           disabled:opacity-50 disabled:cursor-not-allowed;
+  }
+
+  .btn-ghost {
+    @apply bg-white/10 hover:bg-white/20 text-polar-cream font-medium
+           px-4 py-2 rounded-lg transition-colors cursor-pointer;
+  }
+}

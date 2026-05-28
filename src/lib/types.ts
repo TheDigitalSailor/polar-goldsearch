@@ -1,0 +1,79 @@
+export type Typology = 'T0' | 'T1' | 'T2' | 'T3' | 'T4+'
+export type Condition = 'bad' | 'renovation' | 'good' | 'renovated'
+export type VerdictType = 'pass' | 'grey_zone' | 'investigate' | 'excellent'
+
+export interface PropertyInput {
+  address: string
+  typology: Typology
+  area: number
+  askingPrice: number
+  condition: Condition
+  renovationCost: number
+}
+
+export interface Comparable {
+  title: string
+  price: number
+  area: number
+  pricePerSqm: number
+  daysOnMarket: number
+  url?: string
+  location: string
+  rooms?: string
+}
+
+export interface MarketStats {
+  min: number
+  max: number
+  median: number
+  average: number
+  medianPricePerSqm: number
+  averagePricePerSqm: number
+  count: number
+}
+
+export interface FinancialBreakdown {
+  // Costs
+  purchasePrice: number
+  imt: number
+  stampDuty: number
+  notaryFees: number
+  renovationCost: number
+  totalAcquisitionCost: number
+
+  // Sale
+  estimatedSalePrice: number
+  agencyCommission: number
+  agencyVAT: number
+  capitalGainsTax: number
+  energyCertificate: number
+  totalSaleCosts: number
+
+  // Result
+  grossProfit: number
+  netProfit: number
+  netMargin: number
+  roi: number
+}
+
+export interface AnalysisResult {
+  id?: string
+  property: PropertyInput
+  comparables: Comparable[]
+  marketStats: MarketStats
+  financial: FinancialBreakdown
+  verdict: VerdictType
+  aiAnalysis: string
+  createdAt?: string
+}
+
+export interface AnalysisSummary {
+  id: string
+  address: string
+  typology: Typology
+  area: number
+  askingPrice: number
+  verdict: VerdictType
+  netMargin: number
+  createdAt: string
+}
