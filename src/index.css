@@ -16,9 +16,10 @@
   --polar-line:       #E4DFD8;
   --polar-ink:        #1A1612;
   --polar-ink-muted:  #7A7068;
-  --polar-gold:       #C9A96E;
-  --polar-gold-light: #D4B882;
-  --polar-purple:     #4A1942;
+  --polar-gold:         #C9A96E;
+  --polar-gold-light:   #D4B882;
+  --polar-purple:       #4A1942;
+  --polar-purple-light: #5C2254;
   --polar-cream:      #F5F0E8;
 }
 
@@ -54,24 +55,47 @@
 
   /* Card */
   .card {
-    @apply bg-white rounded-2xl p-5;
+    @apply bg-white rounded-xl p-5;
     border: 1px solid var(--polar-line);
     box-shadow: 0 1px 3px 0 rgb(0 0 0 / 0.06), 0 1px 2px -1px rgb(0 0 0 / 0.04);
   }
 
-  /* Input */
+  /* Input — locked to 44px height across all steps */
   .input-field {
-    @apply w-full bg-white rounded-xl px-4 py-3 text-sm transition-all;
+    @apply w-full bg-white rounded-lg text-sm transition-all;
     font-family: 'Cabinet Grotesk', 'Inter', system-ui, sans-serif;
     border: 1px solid var(--polar-line);
     color: var(--polar-ink);
+    height: 44px;
+    padding: 0 1rem;
     box-shadow: 0 1px 2px 0 rgb(0 0 0 / 0.04);
+    /* icon variants override left padding via pl-10 utility */
   }
   .input-field::placeholder {
     color: var(--polar-ink-muted);
     opacity: 0.55;
   }
   .input-field:focus {
+    outline: none;
+    border-color: rgba(74, 25, 66, 0.40);
+    box-shadow: 0 0 0 3px rgba(74, 25, 66, 0.08);
+  }
+
+  /* Textarea — same visual language as input-field, flexible height */
+  .textarea-field {
+    @apply w-full bg-white rounded-lg text-sm transition-all;
+    font-family: 'Cabinet Grotesk', 'Inter', system-ui, sans-serif;
+    border: 1px solid var(--polar-line);
+    color: var(--polar-ink);
+    padding: 0.75rem 1rem;
+    box-shadow: 0 1px 2px 0 rgb(0 0 0 / 0.04);
+    resize: none;
+  }
+  .textarea-field::placeholder {
+    color: var(--polar-ink-muted);
+    opacity: 0.55;
+  }
+  .textarea-field:focus {
     outline: none;
     border-color: rgba(74, 25, 66, 0.40);
     box-shadow: 0 0 0 3px rgba(74, 25, 66, 0.08);
@@ -86,13 +110,13 @@
   /* Primary button */
   .btn-primary {
     @apply font-semibold px-6 py-3 rounded-lg transition-colors cursor-pointer
-           disabled:opacity-50 disabled:cursor-not-allowed;
-    background-color: var(--polar-gold);
-    color: var(--polar-purple);
-    box-shadow: 0 1px 2px 0 rgb(0 0 0 / 0.06);
+           disabled:opacity-30 disabled:cursor-not-allowed;
+    background-color: var(--polar-purple);
+    color: #fff;
+    box-shadow: 0 1px 2px 0 rgb(0 0 0 / 0.08);
   }
   .btn-primary:hover:not(:disabled) {
-    background-color: var(--polar-gold-light);
+    background-color: var(--polar-purple-light);
   }
 
   /* Ghost button */

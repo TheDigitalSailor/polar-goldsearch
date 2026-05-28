@@ -7,12 +7,12 @@ interface Props {
   isLoading: boolean
 }
 
-const typologies: { value: Typology; rooms: string }[] = [
-  { value: 'T0', rooms: 'Estúdio' },
-  { value: 'T1', rooms: '1 quarto' },
-  { value: 'T2', rooms: '2 quartos' },
-  { value: 'T3', rooms: '3 quartos' },
-  { value: 'T4+', rooms: '4+ quartos' },
+const typologies: { value: Typology }[] = [
+  { value: 'T0' },
+  { value: 'T1' },
+  { value: 'T2' },
+  { value: 'T3' },
+  { value: 'T4+' },
 ]
 
 const conditions: { value: Condition; label: string; sub: string }[] = [
@@ -26,6 +26,7 @@ const STEPS = [
   { title: 'Onde fica o imóvel?',       sub: 'Introduz a morada para encontrarmos comparáveis na zona' },
   { title: 'Como é o imóvel?',          sub: 'Tipologia, área e condição actual' },
   { title: 'Qual o valor do negócio?',  sub: 'Preço pedido e estimativa de obras' },
+  { title: 'Comentários ou descrição',  sub: 'Informação adicional sobre o imóvel — ajuda a IA a ser mais precisa (opcional)' },
 ]
 
 // ── Nominatim address autocomplete ──────────────────────────────────────────
@@ -33,11 +34,7 @@ interface NominatimResult {
   display_name: string
   place_id: number
   address: {
-    road?: string
-    suburb?: string
-    city?: string
-    town?: string
-    postcode?: string
+    road?: string; suburb?: string; city?: string; town?: string; postcode?: string
   }
 }
 
@@ -70,9 +67,8 @@ export default function AnalysisForm({ onSubmit, isLoading }: Props) {
   const [step, setStep] = useState(0)
   const [form, setForm] = useState<PropertyInput>({
     address: '', typology: 'T2', area: 0,
-    askingPrice: 0, condition: 'renovation', renovationCost: 0,
+    askingPrice: 0, condition: 'renovation', renovationCost: 0, comments: '',
   })
-
   const [addressInput, setAddressInput] = useState('')
   const [showDropdown, setShowDropdown] = useState(false)
   const { results, loading } = useAddressAutocomplete(addressInput)
@@ -101,11 +97,12 @@ export default function AnalysisForm({ onSubmit, isLoading }: Props) {
   function canNext() {
     if (step === 0) return form.address.length > 3
     if (step === 1) return form.area > 0
-    return form.askingPrice > 0
+    if (step === 2) return form.askingPrice > 0
+    return true // step 3 is optional
   }
 
   function handleNext() {
-    if (step < 2) setStep(s => s + 1)
+    if (step < 3) setStep(s => s + 1)
     else onSubmit(form)
   }
 
@@ -113,42 +110,39 @@ export default function AnalysisForm({ onSubmit, isLoading }: Props) {
     <div className="h-full flex flex-col items-center justify-center p-8">
       <div className="w-full max-w-lg">
 
-        {/* Header */}
-        <div className="mb-7 text-center">
-          <h1 className="font-display text-4xl text-polar-ink tracking-tight mb-2">
-            {STEPS[step].title}
-          </h1>
-          <p className="text-polar-ink-muted text-sm">{STEPS[step].sub}</p>
-        </div>
-
         {/* Card */}
-        <div className="bg-white border border-polar-line rounded-2xl p-6 mb-5 min-h-[240px] flex flex-col justify-center shadow-card-md">
+        <div className="bg-white border border-polar-line rounded-xl p-6 mb-5 flex flex-col shadow-card-md">
+
+          {/* Title inside card, left-aligned */}
+          <div className="mb-5">
+            <h1 className="text-2xl font-bold text-polar-ink tracking-tight mb-1">
+              {STEPS[step].title}
+            </h1>
+            <p className="text-polar-ink-muted text-sm">{STEPS[step].sub}</p>
+          </div>
 
           {/* ── Step 0: Address ── */}
           {step === 0 && (
             <div ref={dropdownRef} className="relative">
-              <label className="label">Morada do imóvel</label>
-              <div className="relative">
-                <MapPin size={16} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-polar-gold" />
-                {loading && <Loader2 size={14} className="absolute right-3.5 top-1/2 -translate-y-1/2 text-polar-ink-muted animate-spin" />}
-                <input
-                  type="text"
-                  className="input-field pl-10"
+              <Field label="Morada do imóvel">
+                <TextInput
+                  icon={<MapPin size={16} />}
                   placeholder="Ex: Rua das Flores 42, Lisboa"
                   value={addressInput}
-                  onChange={e => {
-                    setAddressInput(e.target.value)
-                    set('address', e.target.value)
+                  autoFocus
+                  loading={loading}
+                  onChange={v => {
+                    setAddressInput(v)
+                    set('address', v)
                     setShowDropdown(true)
                   }}
                   onFocus={() => results.length > 0 && setShowDropdown(true)}
-                  autoFocus
                 />
-              </div>
+              </Field>
 
               {/* Dropdown */}
               {showDropdown && results.length > 0 && (
-                <div className="absolute top-full left-0 right-0 mt-1.5 bg-white border border-polar-line rounded-xl overflow-hidden z-50 shadow-card-md">
+                <div className="absolute top-full left-0 right-0 mt-1.5 bg-white border border-polar-line rounded-lg overflow-hidden z-50 shadow-card-md">
                   {results.map(r => (
                     <button
                       key={r.place_id}
@@ -166,7 +160,7 @@ export default function AnalysisForm({ onSubmit, isLoading }: Props) {
               )}
 
               {addressInput.length > 2 && !loading && results.length === 0 && (
-                <p className="text-xs text-polar-ink-muted mt-2 ml-1">
+                <p className="text-xs text-polar-ink-muted mt-2 ml-0.5">
                   Nenhum resultado — continua a escrever ou usa a morada completa
                 </p>
               )}
@@ -176,54 +170,50 @@ export default function AnalysisForm({ onSubmit, isLoading }: Props) {
           {/* ── Step 1: Typology + Area + Condition ── */}
           {step === 1 && (
             <div className="space-y-5">
+
               {/* Typology */}
-              <div>
-                <label className="label">Tipologia</label>
+              <Field label="Tipologia">
                 <div className="flex gap-2">
                   {typologies.map(t => (
                     <button
                       key={t.value}
                       type="button"
                       onClick={() => set('typology', t.value)}
-                      className={`flex-1 py-2.5 rounded-xl text-sm font-semibold transition-all ${
+                      className={`flex-1 py-3 rounded-lg text-sm font-semibold transition-all border ${
                         form.typology === t.value
-                          ? 'bg-polar-gold text-polar-purple border border-polar-gold shadow-sm'
-                          : 'bg-white text-polar-ink-muted border border-polar-line hover:border-polar-gold/50 hover:text-polar-ink'
+                          ? 'bg-polar-purple/10 text-polar-purple border-polar-purple/40'
+                          : 'bg-white text-polar-ink-muted border-polar-line hover:border-polar-purple/25 hover:text-polar-ink'
                       }`}
                     >
                       {t.value}
                     </button>
                   ))}
                 </div>
-              </div>
+              </Field>
 
               {/* Area */}
-              <div>
-                <label className="label">Área útil (m²)</label>
-                <input
-                  type="number"
-                  className="input-field"
+              <Field label="Área útil (m²)">
+                <NumberInput
                   placeholder="Ex: 85"
+                  value={form.area}
                   min={10}
                   autoFocus
-                  value={form.area || ''}
-                  onChange={e => set('area', Number(e.target.value))}
+                  onChange={v => set('area', v)}
                 />
-              </div>
+              </Field>
 
               {/* Condition */}
-              <div>
-                <label className="label">Condição actual</label>
-                <div className="grid grid-cols-2 gap-2">
+              <Field label="Condição actual">
+              <div className="grid grid-cols-2 gap-2">
                   {conditions.map(c => (
                     <button
                       key={c.value}
                       type="button"
                       onClick={() => set('condition', c.value)}
-                      className={`p-3.5 rounded-xl text-left transition-all ${
+                      className={`p-3.5 rounded-lg text-left transition-all border ${
                         form.condition === c.value
-                          ? 'bg-polar-purple/10 border-2 border-polar-purple/40'
-                          : 'bg-white border-2 border-polar-line hover:border-polar-line'
+                          ? 'bg-polar-purple/10 border-polar-purple/40'
+                          : 'bg-white border-polar-line hover:border-polar-purple/25'
                       }`}
                     >
                       <div className={`text-sm font-semibold leading-snug ${
@@ -234,53 +224,60 @@ export default function AnalysisForm({ onSubmit, isLoading }: Props) {
                       <div className="text-xs text-polar-ink-muted mt-1">{c.sub}</div>
                     </button>
                   ))}
-                </div>
               </div>
+              </Field>
             </div>
+          )}
+
+          {/* ── Step 3: Comments ── */}
+          {step === 3 && (
+            <Field
+              label="Comentários ou descrição"
+              optional
+              description="Descreve características relevantes do imóvel que possam influenciar o valor ou a decisão."
+            >
+              <TextareaInput
+                placeholder="Ex: andar alto, vista de rio, condomínio fechado, problemas estruturais conhecidos…"
+                value={form.comments ?? ''}
+                onChange={v => set('comments', v)}
+                maxLength={1000}
+                autoFocus
+              />
+            </Field>
           )}
 
           {/* ── Step 2: Price + Renovation ── */}
           {step === 2 && (
             <div className="space-y-5">
-              <div>
-                <label className="label">Preço pedido</label>
-                <div className="relative">
-                  <Euro size={16} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-polar-gold" />
-                  <input
-                    type="number"
-                    className="input-field pl-10 text-lg"
-                    placeholder="180 000"
-                    min={0}
-                    autoFocus
-                    value={form.askingPrice || ''}
-                    onChange={e => set('askingPrice', Number(e.target.value))}
-                  />
-                </div>
-                {form.askingPrice > 0 && form.area > 0 && (
-                  <p className="text-xs text-polar-ink-muted mt-2 ml-1">
-                    ≈ {Math.round(form.askingPrice / form.area).toLocaleString('pt-PT')} €/m²
-                  </p>
-                )}
-              </div>
+              <Field
+                label="Preço pedido"
+                helper={form.askingPrice > 0 && form.area > 0
+                  ? `≈ ${Math.round(form.askingPrice / form.area).toLocaleString('pt-PT')} €/m²`
+                  : undefined}
+              >
+                <NumberInput
+                  icon={<Euro size={15} />}
+                  placeholder="180 000"
+                  value={form.askingPrice}
+                  min={0}
+                  autoFocus
+                  onChange={v => set('askingPrice', v)}
+                />
+              </Field>
 
-              <div>
-                <label className="label">
-                  Estimativa de obras
-                  <span className="text-polar-ink-muted font-normal ml-1">(opcional)</span>
-                </label>
-                <div className="relative">
-                  <Euro size={16} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-polar-gold" />
-                  <input
-                    type="number"
-                    className="input-field pl-10"
-                    placeholder="0"
-                    min={0}
-                    value={form.renovationCost || ''}
-                    onChange={e => set('renovationCost', Number(e.target.value))}
-                  />
-                </div>
-                <p className="text-xs text-polar-ink-muted mt-2 ml-1">Deixar em branco se o imóvel não precisa de obras</p>
-              </div>
+              <Field
+                label="Estimativa de obras"
+                optional
+                helper="Deixar em branco se o imóvel não precisa de obras"
+              >
+                <NumberInput
+                  icon={<Euro size={15} />}
+                  placeholder="0"
+                  value={form.renovationCost}
+                  min={0}
+                  onChange={v => set('renovationCost', v)}
+                />
+              </Field>
             </div>
           )}
         </div>
@@ -291,11 +288,7 @@ export default function AnalysisForm({ onSubmit, isLoading }: Props) {
             <div
               key={i}
               className={`rounded-full transition-all duration-300 ${
-                i === step
-                  ? 'w-5 h-2 bg-polar-gold'
-                  : i < step
-                  ? 'w-2 h-2 bg-polar-gold/50'
-                  : 'w-2 h-2 bg-polar-line'
+                i === step ? 'w-5 h-2 bg-polar-purple' : 'w-2 h-2 bg-stone-300'
               }`}
             />
           ))}
@@ -307,7 +300,7 @@ export default function AnalysisForm({ onSubmit, isLoading }: Props) {
             <button
               type="button"
               onClick={() => setStep(s => s - 1)}
-              className="flex-1 flex items-center justify-center gap-2 py-3 rounded-xl bg-white border border-polar-line text-polar-ink-muted hover:text-polar-ink hover:bg-polar-sand transition-all text-sm font-medium shadow-sm"
+              className="btn-ghost flex-1 flex items-center justify-center gap-2 py-3 text-sm"
             >
               <ArrowLeft size={15} /> Voltar
             </button>
@@ -316,9 +309,9 @@ export default function AnalysisForm({ onSubmit, isLoading }: Props) {
             type="button"
             onClick={handleNext}
             disabled={!canNext() || isLoading}
-            className="flex-1 flex items-center justify-center gap-2 py-3 rounded-xl bg-polar-gold text-polar-purple font-semibold hover:bg-polar-gold-light transition-all text-sm disabled:opacity-40 disabled:cursor-not-allowed shadow-sm"
+            className="btn-primary flex-1 flex items-center justify-center gap-2 text-sm"
           >
-            {step === 2 ? (
+            {step === 3 ? (
               <><Search size={15} /> Analisar imóvel</>
             ) : (
               <>Continuar <ArrowRight size={15} /></>
@@ -326,6 +319,124 @@ export default function AnalysisForm({ onSubmit, isLoading }: Props) {
           </button>
         </div>
       </div>
+    </div>
+  )
+}
+
+// ── Form component system ────────────────────────────────────────────────────
+
+/** Wraps a label, input slot, and optional helper text */
+function Field({ label, optional, description, helper, children }: {
+  label: string
+  optional?: boolean
+  description?: string
+  helper?: string
+  children: React.ReactNode
+}) {
+  return (
+    <div>
+      <label className="label">
+        {label}
+        {optional && (
+          <span className="text-polar-ink-muted font-normal ml-1.5 text-xs">(opcional)</span>
+        )}
+      </label>
+      {description && (
+        <p className="text-xs text-polar-ink-muted mb-2 ml-0.5">{description}</p>
+      )}
+      {children}
+      {helper && (
+        <p className="text-xs text-polar-ink-muted mt-1.5 ml-0.5">{helper}</p>
+      )}
+    </div>
+  )
+}
+
+/** Text input — with optional leading icon and loading spinner */
+function TextInput({ icon, placeholder, value, onChange, onFocus, autoFocus, loading }: {
+  icon?: React.ReactNode
+  placeholder?: string
+  value: string
+  onChange: (v: string) => void
+  onFocus?: () => void
+  autoFocus?: boolean
+  loading?: boolean
+}) {
+  return (
+    <div className="relative">
+      {icon && (
+        <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-polar-gold pointer-events-none">
+          {icon}
+        </span>
+      )}
+      {loading && (
+        <Loader2 size={14} className="absolute right-3.5 top-1/2 -translate-y-1/2 text-polar-ink-muted animate-spin" />
+      )}
+      <input
+        type="text"
+        className={`input-field${icon ? ' pl-10' : ''}`}
+        placeholder={placeholder}
+        value={value}
+        onChange={e => onChange(e.target.value)}
+        onFocus={onFocus}
+        autoFocus={autoFocus}
+      />
+    </div>
+  )
+}
+
+/** Textarea — free text, optional character counter */
+function TextareaInput({ placeholder, value, onChange, maxLength, autoFocus }: {
+  placeholder?: string
+  value: string
+  onChange: (v: string) => void
+  maxLength?: number
+  autoFocus?: boolean
+}) {
+  return (
+    <div>
+      <textarea
+        className="textarea-field h-36 w-full"
+        placeholder={placeholder}
+        value={value}
+        onChange={e => onChange(e.target.value)}
+        maxLength={maxLength}
+        autoFocus={autoFocus}
+      />
+      {maxLength && (
+        <p className="text-xs text-polar-ink-muted mt-1 text-right">
+          {value.length}/{maxLength}
+        </p>
+      )}
+    </div>
+  )
+}
+
+/** Number input — with optional leading icon */
+function NumberInput({ icon, placeholder, value, onChange, autoFocus, min = 0 }: {
+  icon?: React.ReactNode
+  placeholder?: string
+  value: number
+  onChange: (v: number) => void
+  autoFocus?: boolean
+  min?: number
+}) {
+  return (
+    <div className="relative">
+      {icon && (
+        <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-polar-gold pointer-events-none">
+          {icon}
+        </span>
+      )}
+      <input
+        type="number"
+        className={`input-field${icon ? ' pl-10' : ''}`}
+        placeholder={placeholder}
+        value={value || ''}
+        onChange={e => onChange(Number(e.target.value))}
+        autoFocus={autoFocus}
+        min={min}
+      />
     </div>
   )
 }

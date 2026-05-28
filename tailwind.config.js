@@ -11,26 +11,15 @@ export default {
           // Brand accents
           purple: '#4A1942',
           'purple-light': '#5C2254',
-          'purple-dark': '#3A1333',
           gold: '#C9A96E',
           'gold-light': '#D4B882',
-          'gold-dark': '#B8925A',
           // Light theme neutrals
           sand: '#F6F3EF',
           'sand-dark': '#EDE8E1',
           ink: '#1A1612',
           'ink-muted': '#7A7068',
           line: '#E4DFD8',
-          // Legacy (kept for compat)
-          cream: '#F5F0E8',
-          'cream-muted': '#E8E1D4',
         },
-        verdict: {
-          pass: '#EF4444',
-          grey: '#F59E0B',
-          investigate: '#10B981',
-          excellent: '#6366F1',
-        }
       },
       fontFamily: {
         display: ['Masconia', 'Cormorant Garamond', 'Georgia', 'serif'],

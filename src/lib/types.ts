@@ -9,6 +9,7 @@ export interface PropertyInput {
   askingPrice: number
   condition: Condition
   renovationCost: number
+  comments?: string
 }
 
 export interface Comparable {
