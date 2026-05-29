@@ -57,11 +57,19 @@ export interface FinancialBreakdown {
   roi: number
 }
 
+export interface INEMarketData {
+  medianPricePerSqm: number
+  priceChangePct: number | null
+  period: string   // e.g. "Q4 2025"
+  region: string   // e.g. "A.M. de Lisboa"
+}
+
 export interface AnalysisResult {
   id?: string
   property: PropertyInput
   comparables: Comparable[]
   marketStats: MarketStats
+  ineData: INEMarketData | null
   financial: FinancialBreakdown
   verdict: VerdictType
   aiAnalysis: string

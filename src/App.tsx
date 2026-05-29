@@ -5,7 +5,7 @@ import AnalysisForm from './components/AnalysisForm'
 import ResultsView from './components/ResultsView'
 import LoadingView from './components/LoadingView'
 import HistoryView from './components/HistoryView'
-import { analyzeProperty, getAnalysisHistory, isMockMode, toggleMockMode } from './lib/supabase'
+import { analyzeProperty, deleteAnalysis, getAnalysisById, getAnalysisHistory, isMockMode, toggleMockMode, updateAnalysisAddress } from './lib/supabase'
 import type { AnalysisResult, AnalysisSummary, PropertyInput } from './lib/types'
 
 type Screen = 'form' | 'loading' | 'results' | 'history'
@@ -34,6 +34,50 @@ export default function App() {
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Erro desconhecido')
       setScreen('form')
+    }
+  }
+
+  async function handleRename(id: string, address: string) {
+    setHistory(h => h.map(item => item.id === id ? { ...item, address } : item))
+    if (!isMockMode()) {
+      try { await updateAnalysisAddress(id, address) } catch { /* best-effort */ }
+    }
+  }
+
+  async function handleDelete(id: string) {
+    setHistory(h => h.filter(item => item.id !== id))
+    if (!isMockMode()) {
+      try { await deleteAnalysis(id) } catch { /* best-effort */ }
+    }
+  }
+
+  async function handleOpen(item: AnalysisSummary) {
+    try {
+      const full = await getAnalysisById(item.id)
+      setResult(full)
+      setScreen('results')
+    } catch {
+      setError('Não foi possível abrir a análise.')
+    }
+  }
+
+  async function handleRerun(item: AnalysisSummary) {
+    if (isMockMode()) {
+      await handleAnalyze({
+        address: item.address,
+        typology: item.typology,
+        area: item.area,
+        askingPrice: item.askingPrice,
+        condition: 'renovation',
+        renovationCost: 0,
+      })
+    } else {
+      try {
+        const full = await getAnalysisById(item.id)
+        await handleAnalyze(full.property)
+      } catch {
+        setError('Não foi possível carregar a análise para re-execução.')
+      }
     }
   }
 
@@ -106,6 +150,10 @@ export default function App() {
             history={history}
             isLoading={historyLoading}
             onBack={() => setScreen('form')}
+            onDelete={handleDelete}
+            onRerun={handleRerun}
+            onOpen={handleOpen}
+            onRename={handleRename}
           />
         )}
       </main>

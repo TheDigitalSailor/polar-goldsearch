@@ -31,6 +31,26 @@ export async function analyzeProperty(
   return data as AnalysisResult
 }
 
+export async function updateAnalysisAddress(id: string, address: string): Promise<void> {
+  const { error } = await supabase.from('analyses').update({ address }).eq('id', id)
+  if (error) throw new Error(error.message)
+}
+
+export async function deleteAnalysis(id: string): Promise<void> {
+  const { error } = await supabase.from('analyses').delete().eq('id', id)
+  if (error) throw new Error(error.message)
+}
+
+export async function getAnalysisById(id: string): Promise<AnalysisResult> {
+  const { data, error } = await supabase
+    .from('analyses')
+    .select('result')
+    .eq('id', id)
+    .single()
+  if (error) throw new Error(error.message)
+  return data.result as AnalysisResult
+}
+
 export async function getAnalysisHistory(): Promise<AnalysisSummary[]> {
   const { data, error } = await supabase
     .from('analyses')

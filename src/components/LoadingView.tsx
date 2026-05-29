@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 
 const steps = [
-  'A pesquisar comparáveis no Idealista.pt',
+  'A pesquisar comparáveis no Imovirtual + INE',
   'A calcular análise financeira',
   'A gerar veredicto com IA',
 ]
@@ -17,15 +17,9 @@ export default function LoadingView() {
 
   return (
     <div className="max-w-sm mx-auto px-6 py-16">
-      <div className="card p-8 flex flex-col items-center text-center">
+      <div className="relative mt-10">
 
-        {/* Spinner with branding */}
-        <div className="relative inline-block mb-7">
-          <div className="w-16 h-16 rounded-full border-2 border-polar-line border-t-polar-purple animate-spin" />
-          <div className="absolute inset-[5px] rounded-full bg-polar-purple flex items-center justify-center">
-            <img src="/polar-logo-house-gold.svg" alt="" className="h-6 w-auto" />
-          </div>
-        </div>
+        <div className="card pt-14 pb-8 px-8 flex flex-col items-center text-center">
 
         <h2 className="text-xl font-semibold text-polar-ink mb-1.5">
           A analisar o imóvel
@@ -34,34 +28,59 @@ export default function LoadingView() {
           Isto pode demorar 15–30 segundos
         </p>
 
-        {/* Steps with vertical connecting line */}
-        <div className="w-full text-left relative">
-          {/* Connecting line */}
-          <div className="absolute left-[6px] top-[7px] bottom-[7px] w-px bg-polar-line" />
+        {/* Steps — dot + line live in the same column so the line always connects exactly */}
+        <div className="w-full text-left">
+          {steps.map((label, i) => {
+            const isCurrent = i === activeStep
+            const isCompleted = i < activeStep
+            const isLast = i === steps.length - 1
 
-          <div className="space-y-5">
-            {steps.map((label, i) => {
-              const isActive = i <= activeStep
-              return (
-                <div key={i} className="relative flex items-center gap-3">
+            return (
+              <div key={i} className="flex gap-3">
+                {/* Left column: dot then connector to next dot */}
+                <div className="flex flex-col items-center">
                   <div className={`
-                    relative z-10 w-3.5 h-3.5 rounded-full flex-shrink-0 transition-all duration-500
-                    ${isActive
-                      ? 'bg-polar-purple scale-110 shadow-sm'
-                      : 'bg-stone-200'}
-                  `} />
-                  <span className={`text-sm transition-colors duration-500 ${
-                    isActive ? 'text-polar-ink font-medium' : 'text-polar-ink-muted/50'
-                  }`}>
-                    {label}
-                  </span>
+                    w-3.5 h-3.5 rounded-full flex-shrink-0 transition-all duration-500 flex items-center justify-center mt-0.5
+                    ${isCurrent ? 'bg-polar-purple scale-110 shadow-sm' : ''}
+                    ${isCompleted ? 'bg-polar-purple-light' : ''}
+                    ${!isCurrent && !isCompleted ? 'border border-polar-line bg-white' : ''}
+                  `}>
+                    {isCompleted && (
+                      <svg className="w-2 h-2 text-white" fill="none" viewBox="0 0 8 8">
+                        <path d="M1.5 4l1.8 1.8L6.5 2" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+                      </svg>
+                    )}
+                  </div>
+                  {!isLast && <div className="w-px flex-1 bg-polar-line my-1" />}
                 </div>
-              )
-            })}
+
+                {/* Label */}
+                <span className={`text-sm transition-colors duration-500 ${isLast ? 'pt-0.5' : 'pb-5'} ${
+                  isCurrent ? 'text-polar-ink font-medium' :
+                  isCompleted ? 'text-polar-ink-muted' :
+                  'text-polar-ink-muted/40'
+                }`}>
+                  {label}
+                </span>
+              </div>
+            )
+          })}
+        </div>
+
+        </div>{/* end .card */}
+
+        {/* Spinner — declared after card so it renders on top */}
+        <div className="absolute left-1/2 -translate-x-1/2 -top-10">
+          <div className="w-20 h-20 rounded-full border-2 border-polar-line border-t-polar-purple animate-spin" />
+          <div
+            className="absolute rounded-full bg-polar-purple flex items-center justify-center"
+            style={{ inset: '5px' }}
+          >
+            <img src="/polar-logo-house-gold.svg" alt="" className="h-7 w-auto" />
           </div>
         </div>
 
-      </div>
+      </div>{/* end relative wrapper */}
     </div>
   )
 }

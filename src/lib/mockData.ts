@@ -44,6 +44,12 @@ export const MOCK_RESULT: AnalysisResult = {
     netMargin: -1.1,
     roi: -1.1,
   },
+  ineData: {
+    medianPricePerSqm: 3150,
+    priceChangePct: 8.4,
+    period: 'Q4 2025',
+    region: 'A.M. de Lisboa',
+  },
   verdict: 'pass',
   aiAnalysis: `Este imóvel está a ser pedido a €2.500/m², abaixo da mediana de mercado para a zona (€3.290/m²), o que à partida parece interessante. No entanto, os custos de aquisição e obra consomem grande parte dessa margem aparente.
 

@@ -1,4 +1,4 @@
-import { ArrowLeft, ExternalLink, Clock, Ruler, TrendingDown, TrendingUp, Minus, Trophy, BarChart2, Calculator, Building2 } from 'lucide-react'
+import { ArrowLeft, ExternalLink, Clock, Ruler, TrendingDown, TrendingUp, Minus, Trophy, BarChart2, Calculator, Building2, Database } from 'lucide-react'
 import type { AnalysisResult, VerdictType } from '../lib/types'
 import { formatCurrency, formatPercent } from '../lib/financial'
 
@@ -18,7 +18,7 @@ const verdictConfig: Record<VerdictType, {
 }
 
 export default function ResultsView({ result, onBack }: Props) {
-  const { property, comparables, marketStats, financial, verdict, aiAnalysis } = result
+  const { property, comparables, marketStats, ineData, financial, verdict, aiAnalysis } = result
   const cfg = verdictConfig[verdict]
 
   const askingPricePerSqm = Math.round(property.askingPrice / property.area)
@@ -131,7 +131,65 @@ export default function ResultsView({ result, onBack }: Props) {
         </div>
       </section>
 
-      {/* ── 2. ANÁLISE FINANCEIRA ── */}
+      {/* ── 2. INE MARKET DATA ── */}
+      {ineData && (
+        <section id="ine">
+          <SectionLabel icon={<Database size={13}/>}>Mercado real · INE</SectionLabel>
+          <div className="card">
+            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+              {/* Main stat */}
+              <div>
+                <div className="text-xs text-polar-ink-muted mb-1">
+                  Mediana das vendas reais · {ineData.region}
+                </div>
+                <div className="flex items-baseline gap-2">
+                  <span className="text-2xl font-bold text-polar-ink">
+                    {formatCurrency(ineData.medianPricePerSqm)}/m²
+                  </span>
+                  {ineData.priceChangePct !== null && (
+                    <span className={`flex items-center gap-0.5 text-sm font-semibold ${
+                      ineData.priceChangePct > 0 ? 'text-emerald-600' : 'text-red-500'
+                    }`}>
+                      {ineData.priceChangePct > 0
+                        ? <TrendingUp size={13}/>
+                        : <TrendingDown size={13}/>}
+                      {ineData.priceChangePct > 0 ? '+' : ''}
+                      {ineData.priceChangePct.toFixed(1)}% vs. ano ant.
+                    </span>
+                  )}
+                </div>
+                <div className="text-xs text-polar-ink-muted mt-1">
+                  Baseado em transações reais · {ineData.period}
+                </div>
+              </div>
+              {/* Context badge */}
+              <div className="flex-shrink-0 sm:text-right">
+                <div className="inline-flex flex-col items-end gap-1">
+                  <div className="text-xs text-polar-ink-muted">Preço pedido neste imóvel</div>
+                  <div className={`text-base font-semibold ${
+                    property.askingPrice / property.area > ineData.medianPricePerSqm * 1.05
+                      ? 'text-red-500'
+                      : property.askingPrice / property.area < ineData.medianPricePerSqm * 0.95
+                        ? 'text-emerald-600'
+                        : 'text-amber-600'
+                  }`}>
+                    {formatCurrency(Math.round(property.askingPrice / property.area))}/m²
+                    {' '}
+                    ({property.askingPrice / property.area > ineData.medianPricePerSqm
+                      ? '+' : ''}
+                    {(((property.askingPrice / property.area) - ineData.medianPricePerSqm) / ineData.medianPricePerSqm * 100).toFixed(0)}% INE)
+                  </div>
+                  <div className="text-[10px] text-polar-ink-muted/60">
+                    Fonte: INE — Estatísticas de Preços da Habitação
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </section>
+      )}
+
+      {/* ── 3. ANÁLISE FINANCEIRA ── */}
       <section id="financial">
         <SectionLabel icon={<Calculator size={13}/>}>Análise financeira</SectionLabel>
         <div className="card">
@@ -191,7 +249,7 @@ export default function ResultsView({ result, onBack }: Props) {
         </div>
       </section>
 
-      {/* ── 3. VEREDICTO ── */}
+      {/* ── 4. VEREDICTO ── */}
       <section id="verdict">
         <SectionLabel icon={<Trophy size={13}/>}>Veredicto</SectionLabel>
         <div className={`rounded-xl border p-5 sm:p-7 ${cfg.bg} ${cfg.border}`}>
@@ -220,9 +278,9 @@ export default function ResultsView({ result, onBack }: Props) {
         </div>
       </section>
 
-      {/* ── 4. COMPARÁVEIS ── */}
+      {/* ── 5. COMPARÁVEIS ── */}
       <section id="comparables">
-        <SectionLabel icon={<Building2 size={13}/>}>Imóveis comparáveis activos</SectionLabel>
+        <SectionLabel icon={<Building2 size={13}/>}>Imóveis comparáveis · Imovirtual</SectionLabel>
         {comparables.length === 0 ? (
           <div className="card text-center py-12 text-polar-ink-muted">
             Nenhum comparável encontrado na zona
@@ -236,63 +294,48 @@ export default function ResultsView({ result, onBack }: Props) {
               const diffBadge = diff < -5
                 ? 'text-emerald-700 bg-emerald-100'
                 : diff > 5
-                ? 'text-red-600 bg-red-100'
-                : 'text-amber-700 bg-amber-100'
+                  ? 'text-red-600 bg-red-100'
+                  : 'text-amber-700 bg-amber-100'
 
               return (
-                <div key={i} className="rounded-xl border border-polar-line bg-white overflow-hidden hover:shadow-card-md transition-shadow">
-                  <div className="flex flex-col sm:flex-row">
-
-                    {/* Image — full width on mobile, fixed width on desktop */}
-                    <div className="w-full h-44 sm:w-52 sm:h-auto sm:min-h-[160px] flex-shrink-0 bg-polar-sand flex items-center justify-center border-b sm:border-b-0 sm:border-r border-polar-line">
-                      <span className="text-6xl opacity-15">🏠</span>
+                <div key={i} className="rounded-xl border border-polar-line bg-white p-4 hover:shadow-card-md transition-shadow">
+                  {/* Price row */}
+                  <div className="flex items-start justify-between gap-2 mb-2">
+                    <div className="flex items-baseline gap-2 flex-wrap">
+                      <span className="text-lg font-bold text-polar-ink">{formatCurrency(c.price)}</span>
+                      <span className="text-xs text-polar-ink-muted">{formatCurrency(c.pricePerSqm)}/m²</span>
                     </div>
+                    {diff !== 0 && (
+                      <span className={`text-xs font-semibold px-2 py-0.5 rounded-full flex-shrink-0 ${diffBadge}`}>
+                        {diff > 0 ? '+' : ''}{diff.toFixed(0)}%
+                      </span>
+                    )}
+                  </div>
 
-                    {/* Info */}
-                    <div className="flex-1 p-4 flex flex-col min-w-0">
+                  {/* Title */}
+                  <p className="font-medium text-polar-ink text-sm leading-snug line-clamp-2 mb-1">{c.title}</p>
 
-                      {/* Price + badge */}
-                      <div className="flex items-start justify-between gap-2 mb-2">
-                        <div>
-                          <div className="flex items-baseline gap-2 flex-wrap">
-                            <span className="text-xl font-bold text-polar-ink">{formatCurrency(c.price)}</span>
-                            <span className="text-xs text-polar-ink-muted">{formatCurrency(c.pricePerSqm)}/m²</span>
-                          </div>
-                        </div>
-                        {diff !== 0 && (
-                          <span className={`text-xs font-semibold px-2 py-0.5 rounded-full flex-shrink-0 ${diffBadge}`}>
-                            {diff > 0 ? '+' : ''}{diff.toFixed(0)}%
-                          </span>
-                        )}
-                      </div>
+                  {/* Location */}
+                  <p className="text-xs text-polar-ink-muted mb-3 line-clamp-1">{c.location}</p>
 
-                      {/* Title */}
-                      <p className="font-medium text-polar-ink text-sm leading-snug line-clamp-2 mb-1">{c.title}</p>
-
-                      {/* Location */}
-                      <p className="text-xs text-polar-ink-muted mb-3 line-clamp-1">{c.location}</p>
-
-                      {/* Specs */}
-                      <div className="flex items-center gap-4 text-xs text-polar-ink-muted pb-4">
-                        <span className="flex items-center gap-1"><Ruler size={11}/> {c.area} m²</span>
-                        <span className="flex items-center gap-1"><Clock size={11}/> {c.daysOnMarket}d no mercado</span>
-                      </div>
-
-                      {/* Button */}
-                      {c.url && (
-                        <div className="mt-auto pt-4 border-t border-polar-line">
-                          <a
-                            href={c.url}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="inline-flex items-center gap-1.5 text-xs font-semibold text-polar-purple border border-polar-purple/25 hover:bg-polar-purple/5 px-3 py-1.5 rounded-lg transition-colors"
-                          >
-                            Ver imóvel <ExternalLink size={11}/>
-                          </a>
-                        </div>
+                  {/* Specs + link */}
+                  <div className="flex items-center justify-between gap-4">
+                    <div className="flex items-center gap-4 text-xs text-polar-ink-muted">
+                      <span className="flex items-center gap-1"><Ruler size={11}/> {c.area} m²</span>
+                      {c.daysOnMarket > 0 && (
+                        <span className="flex items-center gap-1"><Clock size={11}/> {c.daysOnMarket}d</span>
                       )}
                     </div>
-
+                    {c.url && (
+                      <a
+                        href={c.url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="inline-flex items-center gap-1 text-xs font-semibold text-polar-purple hover:underline flex-shrink-0"
+                      >
+                        Ver <ExternalLink size={10}/>
+                      </a>
+                    )}
                   </div>
                 </div>
               )

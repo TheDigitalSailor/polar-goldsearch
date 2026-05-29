@@ -17,8 +17,10 @@ create index if not exists analyses_created_at_idx on analyses (created_at desc)
 -- Enable Row Level Security (read-only public for MVP — no auth)
 alter table analyses enable row level security;
 
-create policy "Allow public read" on analyses
-  for select using (true);
+do $$ begin
+  create policy "Allow public read" on analyses for select using (true);
+exception when duplicate_object then null; end $$;
 
-create policy "Allow public insert" on analyses
-  for insert with check (true);
+do $$ begin
+  create policy "Allow public insert" on analyses for insert with check (true);
+exception when duplicate_object then null; end $$;
