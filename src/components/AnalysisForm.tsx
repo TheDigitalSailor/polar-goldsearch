@@ -34,8 +34,119 @@ interface NominatimResult {
   display_name: string
   place_id: number
   address: {
-    road?: string; suburb?: string; city?: string; town?: string; postcode?: string
+    house_number?: string
+    road?: string
+    suburb?: string
+    neighbourhood?: string
+    quarter?: string
+    village?: string
+    town?: string
+    city?: string
+    municipality?: string
+    county?: string
+    state?: string
+    postcode?: string
   }
+}
+
+/** Build a clean Portuguese-style address from Nominatim address components */
+function formatNominatimAddress(r: NominatimResult): string {
+  const a = r.address
+  const parts: string[] = []
+
+  // Street + number
+  if (a.road) parts.push(a.road + (a.house_number ? ' ' + a.house_number : ''))
+
+  // Neighbourhood / suburb
+  const hood = a.suburb || a.neighbourhood || a.quarter
+  if (hood) parts.push(hood)
+
+  // City / town / village
+  const city = a.city || a.town || a.village || a.municipality
+  if (city) parts.push(city)
+
+  // County/district
+  if (a.county) parts.push(a.county)
+
+  // Fallback to trimmed display_name if we got nothing useful
+  if (parts.length < 2) {
+    return r.display_name.split(',').slice(0, 5).join(',').trim()
+  }
+  return parts.join(', ')
+}
+
+/** True if query looks like a Portuguese postal code (full or partial): XXXX or XXXX-XXX */
+const isPostalCode = (q: string) => /^\d{4}(-\d{0,3})?$/.test(q.trim())
+
+/** Resolve a Portuguese postal code via geoapi.pt (free, no key).
+ *  Response is a single object with top-level locality fields,
+ *  a `partes` array (streets with `Artéria` key) and a `ruas` flat array.
+ *  Falls back to Nominatim if the service is unavailable.
+ */
+async function lookupPostalCode(cp: string): Promise<NominatimResult[]> {
+  const normalized = cp.trim()
+  // For API calls, prefer the full "XXXX-XXX" format; otherwise just the 4 digits
+  const apiCode = /^\d{4}-\d{3}$/.test(normalized)
+    ? normalized
+    : normalized.replace(/\D/g, '').slice(0, 4)
+
+  // Stage 1 — geoapi.pt
+  try {
+    const res = await fetch(`/api/geoapi/cp/${encodeURIComponent(apiCode)}`)
+    if (res.ok) {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const data = await res.json() as any
+      const locality     = String(data?.Localidade || data?.['Designação Postal'] || '')
+      const municipality = String(data?.Concelho   || data?.municipio             || '')
+      const district     = String(data?.Distrito   || '')
+
+      // ── Try partes[].Artéria (nicely cased) ──────────────────────────────
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const partes: any[] = Array.isArray(data?.partes) ? data.partes : []
+      // Use bracket notation AND check all own keys containing 'rt' to survive
+      // any Unicode normalisation difference between the source file and the API
+      const partesStreets = [...new Set(
+        partes.map((p: any) => {
+          // Explicit key first; if empty try to find any key that looks like Artéria
+          const direct = String(p?.['Artéria'] || p?.Arteria || '')
+          if (direct) return direct
+          const key = Object.keys(p ?? {}).find(k => /art.ria/i.test(k))
+          return key ? String(p[key] || '') : ''
+        }).filter(Boolean)
+      )] as string[]
+
+      // ── Fall back to `ruas` flat array (uppercase, but always reliable) ──
+      const ruasArr: string[] = Array.isArray(data?.ruas)
+        ? (data.ruas as string[]).filter(Boolean)
+        : []
+
+      const streets = partesStreets.length > 0 ? partesStreets : ruasArr
+
+      if (streets.length > 0) {
+        return streets.slice(0, 5).map((street, i) => ({
+          place_id: i,
+          display_name: [street, locality, municipality, district].filter(Boolean).join(', '),
+          address: { road: street, suburb: locality, city: municipality, county: district, postcode: normalized },
+        }))
+      }
+
+      // No streets — return just the locality so the user can at least proceed
+      if (locality) {
+        return [{
+          place_id: 0,
+          display_name: [locality, municipality, district].filter(Boolean).join(', '),
+          address: { suburb: locality, city: municipality, county: district, postcode: normalized },
+        }]
+      }
+    }
+  } catch { /* fall through */ }
+
+  // Stage 2 — Nominatim fallback
+  try {
+    const url = `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(normalized + ', Portugal')}&format=json&limit=5&addressdetails=1`
+    const res = await fetch(url, { headers: { 'Accept-Language': 'pt-PT' } })
+    return await res.json()
+  } catch { return [] }
 }
 
 function useAddressAutocomplete(query: string) {
@@ -44,14 +155,19 @@ function useAddressAutocomplete(query: string) {
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   useEffect(() => {
-    if (query.length < 3) { setResults([]); return }
+    if (query.length < 4) { setResults([]); return }
     if (timer.current) clearTimeout(timer.current)
     timer.current = setTimeout(async () => {
       setLoading(true)
       try {
-        const url = `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(query)}&countrycodes=pt&format=json&limit=6&addressdetails=1`
-        const res = await fetch(url, { headers: { 'Accept-Language': 'pt-PT' } })
-        const data: NominatimResult[] = await res.json()
+        let data: NominatimResult[]
+        if (isPostalCode(query)) {
+          data = await lookupPostalCode(query)
+        } else {
+          const url = `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(query + ', Portugal')}&countrycodes=pt&format=json&limit=6&addressdetails=1`
+          const res = await fetch(url, { headers: { 'Accept-Language': 'pt-PT' } })
+          data = await res.json()
+        }
         setResults(data.slice(0, 5))
       } catch { setResults([]) }
       finally { setLoading(false) }
@@ -88,9 +204,20 @@ export default function AnalysisForm({ onSubmit, isLoading }: Props) {
   }, [])
 
   function selectAddress(r: NominatimResult) {
-    const parts = r.display_name.split(',').slice(0, 4).join(',').trim()
-    set('address', parts)
-    setAddressInput(parts)
+    let addr = formatNominatimAddress(r)
+
+    // If the result has no house number but the user typed one, inject it
+    // e.g. user typed "Rua X 131, ..." → result is "Rua X" → final: "Rua X 131"
+    // Skip if the input is a postal code (digits would be misread as a house number)
+    if (!r.address.house_number && r.address.road && !isPostalCode(addressInput)) {
+      const numMatch = addressInput.match(/\b(\d{1,4}[A-Za-zº°]?)\b/)
+      if (numMatch) {
+        addr = addr.replace(r.address.road, `${r.address.road} ${numMatch[1]}`)
+      }
+    }
+
+    set('address', addr)
+    setAddressInput(addr)
     setShowDropdown(false)
   }
 
@@ -152,7 +279,7 @@ export default function AnalysisForm({ onSubmit, isLoading }: Props) {
                     >
                       <MapPin size={13} className="text-polar-gold mt-0.5 flex-shrink-0" />
                       <span className="line-clamp-2 leading-snug text-polar-ink-muted">
-                        {r.display_name.split(',').slice(0, 5).join(', ')}
+                        {formatNominatimAddress(r)}
                       </span>
                     </button>
                   ))}

@@ -6,6 +6,7 @@ import {
 import { TrendingUp, TrendingDown, RefreshCw, AlertCircle } from 'lucide-react'
 import { supabase } from '../lib/supabase'
 import { formatCurrency } from '../lib/financial'
+import PortugalMap from './PortugalMap'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -208,6 +209,22 @@ export default function MarketTrendsView() {
           </>
         ) : null}
       </div>
+
+      {/* ── District map ── */}
+      <section>
+        <SectionTitle>Mapa de preços por distrito · {data?.latestPeriod ?? '–'}</SectionTitle>
+        <div className="card">
+          {loading ? (
+            <Skeleton className="h-[420px] w-full" />
+          ) : data ? (
+            <PortugalMap
+              regions={data.regions}
+              nationalMedian={data.national.median}
+              latestPeriod={data.latestPeriod}
+            />
+          ) : null}
+        </div>
+      </section>
 
       {/* ── National price trend ── */}
       <section>
@@ -441,7 +458,7 @@ export default function MarketTrendsView() {
       {/* ── Source ── */}
       <p className="text-[10px] text-polar-ink-muted/50 text-center pb-4">
         Fonte: INE — Estatísticas de Preços da Habitação ao Nível Local (Metodologia 2022) · Indicador 0012234 · Trimestral ·
-        Cobertura geográfica limitada a regiões com dados públicos disponíveis na API INE (Lisboa e Porto não disponíveis neste endpoint).
+        Cobertura por região, sub-região (NUTS III) e principais concelhos. Valores do mapa por distrito aproximados à sub-região NUTS III dominante.
       </p>
 
     </div>
