@@ -18,8 +18,8 @@ type PendingAction =
   | { id: string; action: 'rename'; value: string }
 
 const verdictBadge: Record<VerdictType, { icon: string; label: string; className: string }> = {
-  excellent:   { icon: '🚀', label: 'Excelente',   className: 'text-indigo-700 bg-indigo-100'  },
-  investigate: { icon: '✅', label: 'Investigar',  className: 'text-emerald-700 bg-emerald-100' },
+  excellent:   { icon: '🚀', label: 'Excelente',   className: 'text-emerald-700 bg-emerald-100' },
+  investigate: { icon: '✅', label: 'Investigar',  className: 'text-lime-700 bg-lime-100'        },
   grey_zone:   { icon: '⚠️', label: 'Zona cinz.', className: 'text-amber-700 bg-amber-100'    },
   pass:        { icon: '❌', label: 'Mau negócio', className: 'text-red-700 bg-red-100'        },
 }

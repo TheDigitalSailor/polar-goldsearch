@@ -413,6 +413,18 @@ function TextareaInput({ placeholder, value, onChange, maxLength, autoFocus }: {
 }
 
 /** Number input — with optional leading icon */
+/** Format a number with spaces every 3 digits: 290000 → "290 000" */
+function formatNumber(n: number): string {
+  if (!n) return ''
+  return n.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ' ')
+}
+
+/** Strip spaces and parse back to number */
+function parseFormatted(s: string): number {
+  const clean = s.replace(/\s/g, '').replace(/[^\d]/g, '')
+  return clean ? parseInt(clean, 10) : 0
+}
+
 function NumberInput({ icon, placeholder, value, onChange, autoFocus, min = 0 }: {
   icon?: React.ReactNode
   placeholder?: string
@@ -421,6 +433,22 @@ function NumberInput({ icon, placeholder, value, onChange, autoFocus, min = 0 }:
   autoFocus?: boolean
   min?: number
 }) {
+  const [display, setDisplay] = useState(formatNumber(value))
+
+  // Keep display in sync when value changes from outside
+  useEffect(() => {
+    setDisplay(formatNumber(value))
+  }, [value])
+
+  function handleChange(e: React.ChangeEvent<HTMLInputElement>) {
+    const raw = e.target.value
+    // Allow only digits and spaces
+    const cleaned = raw.replace(/[^\d\s]/g, '')
+    const num = parseFormatted(cleaned)
+    setDisplay(formatNumber(num) || (cleaned.trim() === '' ? '' : cleaned))
+    onChange(num)
+  }
+
   return (
     <div className="relative">
       {icon && (
@@ -429,11 +457,12 @@ function NumberInput({ icon, placeholder, value, onChange, autoFocus, min = 0 }:
         </span>
       )}
       <input
-        type="number"
+        type="text"
+        inputMode="numeric"
         className={`input-field${icon ? ' pl-10' : ''}`}
         placeholder={placeholder}
-        value={value || ''}
-        onChange={e => onChange(Number(e.target.value))}
+        value={display}
+        onChange={handleChange}
         autoFocus={autoFocus}
         min={min}
       />

@@ -5,10 +5,11 @@ import AnalysisForm from './components/AnalysisForm'
 import ResultsView from './components/ResultsView'
 import LoadingView from './components/LoadingView'
 import HistoryView from './components/HistoryView'
+import MarketTrendsView from './components/MarketTrendsView'
 import { analyzeProperty, deleteAnalysis, getAnalysisById, getAnalysisHistory, isMockMode, toggleMockMode, updateAnalysisAddress } from './lib/supabase'
 import type { AnalysisResult, AnalysisSummary, PropertyInput } from './lib/types'
 
-type Screen = 'form' | 'loading' | 'results' | 'history'
+type Screen = 'form' | 'loading' | 'results' | 'history' | 'trends'
 
 export default function App() {
   const [screen, setScreen] = useState<Screen>('form')
@@ -156,6 +157,7 @@ export default function App() {
             onRename={handleRename}
           />
         )}
+        {screen === 'trends' && <MarketTrendsView />}
       </main>
     </div>
   )

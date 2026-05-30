@@ -1,4 +1,5 @@
-import { ArrowLeft, ExternalLink, Clock, Ruler, TrendingDown, TrendingUp, Minus, Trophy, BarChart2, Calculator, Building2, Database } from 'lucide-react'
+import { useState, useMemo } from 'react'
+import { ArrowLeft, ExternalLink, Clock, Ruler, TrendingDown, TrendingUp, Minus, Trophy, BarChart2, Calculator, Building2, MapPin, Info } from 'lucide-react'
 import type { AnalysisResult, VerdictType } from '../lib/types'
 import { formatCurrency, formatPercent } from '../lib/financial'
 
@@ -11,8 +12,8 @@ const verdictConfig: Record<VerdictType, {
   icon: string; label: string; textColor: string; bg: string; border: string; marginColor: string
   badgeBg: string; badgeText: string
 }> = {
-  excellent:   { icon: '🚀', label: 'Excelente oportunidade', textColor: 'text-indigo-700',  bg: 'bg-indigo-50',  border: 'border-indigo-200',  marginColor: 'text-indigo-600',  badgeBg: 'bg-indigo-100',  badgeText: 'text-indigo-800'  },
-  investigate: { icon: '✅', label: 'Merece investigar',     textColor: 'text-emerald-700', bg: 'bg-emerald-50', border: 'border-emerald-200', marginColor: 'text-emerald-600', badgeBg: 'bg-emerald-100', badgeText: 'text-emerald-800' },
+  excellent:   { icon: '🚀', label: 'Excelente oportunidade', textColor: 'text-emerald-700', bg: 'bg-emerald-50', border: 'border-emerald-200', marginColor: 'text-emerald-600', badgeBg: 'bg-emerald-100', badgeText: 'text-emerald-800' },
+  investigate: { icon: '✅', label: 'Merece investigar',     textColor: 'text-lime-700',    bg: 'bg-lime-50',    border: 'border-lime-200',    marginColor: 'text-lime-600',    badgeBg: 'bg-lime-100',    badgeText: 'text-lime-800'    },
   grey_zone:   { icon: '⚠️', label: 'Zona cinzenta',        textColor: 'text-amber-700',   bg: 'bg-amber-50',   border: 'border-amber-200',   marginColor: 'text-amber-600',   badgeBg: 'bg-amber-100',   badgeText: 'text-amber-800'   },
   pass:        { icon: '❌', label: 'Mau negócio',           textColor: 'text-red-700',     bg: 'bg-red-50',     border: 'border-red-200',     marginColor: 'text-red-600',     badgeBg: 'bg-red-100',     badgeText: 'text-red-800'     },
 }
@@ -20,6 +21,39 @@ const verdictConfig: Record<VerdictType, {
 export default function ResultsView({ result, onBack }: Props) {
   const { property, comparables, marketStats, ineData, financial, verdict, aiAnalysis } = result
   const cfg = verdictConfig[verdict]
+
+  // ── Sale price slider state ───────────────────────────────────────────────
+  const [salePrice, setSalePrice] = useState(financial.estimatedSalePrice)
+  const minPrice = Math.round(financial.estimatedSalePrice * 0.55)
+  const maxPrice = Math.round(financial.estimatedSalePrice * 1.55)
+  const sliderPct = Math.min(100, Math.max(0,
+    ((salePrice - minPrice) / (maxPrice - minPrice)) * 100
+  ))
+  const estimatedPct = Math.min(100, Math.max(0,
+    ((financial.estimatedSalePrice - minPrice) / (maxPrice - minPrice)) * 100
+  ))
+  const zoneLabel =
+    salePrice < financial.estimatedSalePrice * 0.97 ? 'Abaixo do mercado' :
+    salePrice > financial.estimatedSalePrice * 1.03 ? 'Acima do mercado' :
+    'Preço estimado'
+  const zoneColor =
+    salePrice < financial.estimatedSalePrice * 0.97 ? 'text-red-500' :
+    salePrice > financial.estimatedSalePrice * 1.03 ? 'text-emerald-600' :
+    'text-amber-600'
+
+  // Recalculate sale-side figures when slider moves (verdict stays fixed)
+  const adj = useMemo(() => {
+    const agencyCommission = salePrice * 0.05
+    const agencyVAT        = agencyCommission * 0.23
+    const energyCertificate = financial.energyCertificate
+    const capitalGain      = salePrice - financial.totalAcquisitionCost
+    const capitalGainsTax  = capitalGain > 0 ? capitalGain * 0.5 * 0.28 : 0
+    const totalSaleCosts   = agencyCommission + agencyVAT + capitalGainsTax + energyCertificate
+    const netProfit        = salePrice - financial.totalAcquisitionCost - totalSaleCosts
+    const netMargin        = (netProfit / financial.totalAcquisitionCost) * 100
+    return { agencyCommission, agencyVAT, capitalGainsTax, energyCertificate,
+             totalSaleCosts, netProfit, netMargin }
+  }, [salePrice, financial])
 
   const askingPricePerSqm = Math.round(property.askingPrice / property.area)
   const priceDiff = marketStats.medianPricePerSqm > 0
@@ -131,60 +165,53 @@ export default function ResultsView({ result, onBack }: Props) {
         </div>
       </section>
 
-      {/* ── 2. INE MARKET DATA ── */}
-      {ineData && (
-        <section id="ine">
-          <SectionLabel icon={<Database size={13}/>}>Mercado real · INE</SectionLabel>
+      {/* ── 2. MERCADO LOCAL ── */}
+      {comparables.length > 0 && (
+        <section id="market">
+          <SectionLabel icon={<MapPin size={13}/>}>Mercado local · Imovirtual</SectionLabel>
           <div className="card">
-            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-              {/* Main stat */}
+
+            {/* Three stats */}
+            <div className="grid grid-cols-3 gap-2 sm:gap-6 mb-5">
               <div>
-                <div className="text-xs text-polar-ink-muted mb-1">
-                  Mediana das vendas reais · {ineData.region}
-                </div>
-                <div className="flex items-baseline gap-2">
-                  <span className="text-2xl font-bold text-polar-ink">
-                    {formatCurrency(ineData.medianPricePerSqm)}/m²
-                  </span>
-                  {ineData.priceChangePct !== null && (
-                    <span className={`flex items-center gap-0.5 text-sm font-semibold ${
-                      ineData.priceChangePct > 0 ? 'text-emerald-600' : 'text-red-500'
-                    }`}>
-                      {ineData.priceChangePct > 0
-                        ? <TrendingUp size={13}/>
-                        : <TrendingDown size={13}/>}
-                      {ineData.priceChangePct > 0 ? '+' : ''}
-                      {ineData.priceChangePct.toFixed(1)}% vs. ano ant.
-                    </span>
-                  )}
-                </div>
-                <div className="text-xs text-polar-ink-muted mt-1">
-                  Baseado em transações reais · {ineData.period}
+                <div className="text-[10px] sm:text-xs text-polar-ink-muted mb-1">Mediana de oferta</div>
+                <div className="text-lg sm:text-2xl font-bold text-polar-ink">
+                  {formatCurrency(marketStats.medianPricePerSqm)}<span className="text-xs sm:text-sm font-normal text-polar-ink-muted">/m²</span>
                 </div>
               </div>
-              {/* Context badge */}
-              <div className="flex-shrink-0 sm:text-right">
-                <div className="inline-flex flex-col items-end gap-1">
-                  <div className="text-xs text-polar-ink-muted">Preço pedido neste imóvel</div>
-                  <div className={`text-base font-semibold ${
-                    property.askingPrice / property.area > ineData.medianPricePerSqm * 1.05
-                      ? 'text-red-500'
-                      : property.askingPrice / property.area < ineData.medianPricePerSqm * 0.95
-                        ? 'text-emerald-600'
-                        : 'text-amber-600'
-                  }`}>
-                    {formatCurrency(Math.round(property.askingPrice / property.area))}/m²
-                    {' '}
-                    ({property.askingPrice / property.area > ineData.medianPricePerSqm
-                      ? '+' : ''}
-                    {(((property.askingPrice / property.area) - ineData.medianPricePerSqm) / ineData.medianPricePerSqm * 100).toFixed(0)}% INE)
-                  </div>
-                  <div className="text-[10px] text-polar-ink-muted/60">
-                    Fonte: INE — Estatísticas de Preços da Habitação
-                  </div>
+              <div className="text-center">
+                <div className="text-[10px] sm:text-xs text-polar-ink-muted mb-1">Intervalo</div>
+                <div className="text-xs sm:text-sm font-semibold text-polar-ink">
+                  {formatCurrency(marketStats.min)} – {formatCurrency(marketStats.max)}<span className="font-normal text-polar-ink-muted">/m²</span>
                 </div>
+              </div>
+              <div className="text-right">
+                <div className="text-[10px] sm:text-xs text-polar-ink-muted mb-1">Anúncios activos</div>
+                <div className="text-lg sm:text-2xl font-bold text-polar-ink">{comparables.length}</div>
               </div>
             </div>
+
+            {/* INE trend footnote — kept only as market momentum signal, not as pricing reference */}
+            {ineData?.priceChangePct !== null && ineData && (
+              <div className={`inline-flex items-center gap-1.5 text-xs font-medium px-2.5 py-1 rounded-full mb-4 ${
+                ineData.priceChangePct! > 0 ? 'bg-emerald-50 text-emerald-700' : 'bg-red-50 text-red-600'
+              }`}>
+                {ineData.priceChangePct! > 0 ? <TrendingUp size={11}/> : <TrendingDown size={11}/>}
+                Mercado nacional {ineData.priceChangePct! > 0 ? '+' : ''}{ineData.priceChangePct!.toFixed(1)}% a.a. · INE {ineData.period}
+              </div>
+            )}
+
+            {/* Disclaimer */}
+            <div className="flex gap-2 bg-polar-bg rounded-lg p-3 border border-polar-line">
+              <Info size={13} className="text-polar-ink-muted/50 flex-shrink-0 mt-0.5" />
+              <p className="text-[10px] sm:text-xs text-polar-ink-muted/70 leading-relaxed">
+                Preços de oferta activos no Imovirtual para tipologias próximas na área deste imóvel,
+                com cobertura ao nível de freguesia ou concelho conforme a densidade de anúncios disponíveis.
+                Reflectem valores pedidos, não preços de transacção efectiva — servem como referência de
+                mercado e não como base exclusiva para decisão de investimento.
+              </p>
+            </div>
+
           </div>
         </section>
       )}
@@ -193,59 +220,114 @@ export default function ResultsView({ result, onBack }: Props) {
       <section id="financial">
         <SectionLabel icon={<Calculator size={13}/>}>Análise financeira</SectionLabel>
         <div className="card">
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-6 sm:gap-8">
-            <div>
-              <ColLabel>Custos de compra</ColLabel>
-              <div className="divide-y divide-polar-line">
-                <FinRow label="Preço de compra"        value={formatCurrency(financial.purchasePrice)} />
-                <FinRow label={`IMT (${formatPercent((financial.imt / financial.purchasePrice) * 100)})`} value={formatCurrency(financial.imt)} neg />
-                <FinRow label="Imposto de Selo (0.8%)" value={formatCurrency(financial.stampDuty)} neg />
-                <FinRow label="Escritura e registos"   value={formatCurrency(financial.notaryFees)} neg />
-                {financial.renovationCost > 0 &&
-                  <FinRow label="Obras"                value={formatCurrency(financial.renovationCost)} neg />}
-              </div>
-              <div className="border-t border-polar-line mt-2 pt-2">
-                <FinRow label="Total investido" value={formatCurrency(financial.totalAcquisitionCost)} bold />
+
+          {/* Custos de compra */}
+          <ColLabel>Custos de compra</ColLabel>
+          <div className="divide-y divide-polar-line">
+            <FinRow label="Preço de compra"        value={formatCurrency(financial.purchasePrice)} />
+            <FinRow label={`IMT (${formatPercent((financial.imt / financial.purchasePrice) * 100)})`} value={formatCurrency(financial.imt)} neg />
+            <FinRow label="Imposto de Selo (0.8%)" value={formatCurrency(financial.stampDuty)} neg />
+            <FinRow label="Escritura e registos"   value={formatCurrency(financial.notaryFees)} neg />
+            {financial.renovationCost > 0 &&
+              <FinRow label="Obras" value={formatCurrency(financial.renovationCost)} neg />}
+          </div>
+          <div className="border-t border-polar-line mt-2 pt-2">
+            <FinRow label="Total investido" value={formatCurrency(financial.totalAcquisitionCost)} bold />
+          </div>
+
+          {/* ── Sale price slider ── */}
+          <div className="mt-6 pt-5 border-t border-polar-line">
+            <div className="flex items-baseline justify-between mb-4">
+              <span className="text-xs font-semibold text-polar-ink-muted uppercase tracking-wider">
+                Preço de venda
+              </span>
+              <div className="flex items-baseline gap-2">
+                <span className="text-lg font-bold text-polar-ink">{formatCurrency(salePrice)}</span>
+                <span className={`text-xs font-semibold ${zoneColor}`}>{zoneLabel}</span>
               </div>
             </div>
 
-            <div>
-              <ColLabel>Projecção de venda</ColLabel>
-              <div className="divide-y divide-polar-line">
-                <FinRow label="Venda estimada"         value={formatCurrency(financial.estimatedSalePrice)} highlight />
-                <FinRow label="Comissão agência (5%)"  value={formatCurrency(financial.agencyCommission)} neg />
-                <FinRow label="IVA comissão (23%)"     value={formatCurrency(financial.agencyVAT)} neg />
-                <FinRow label="IRS mais-valias"        value={formatCurrency(financial.capitalGainsTax)} neg />
-                <FinRow label="Certificado energético" value={formatCurrency(financial.energyCertificate)} neg />
-              </div>
-              <div className="border-t border-polar-line mt-2 pt-2">
-                <FinRow
-                  label="Lucro líquido"
-                  value={formatCurrency(financial.netProfit)}
-                  bold
-                  positive={financial.netProfit >= 0}
+            {/* Gradient track */}
+            <div className="relative h-8 flex items-center mb-2">
+              <div className="absolute inset-x-0 top-1/2 -translate-y-1/2 h-2.5 rounded-full bg-gradient-to-r from-red-400 via-amber-400 to-emerald-400">
+                {/* "Estimated" reference marker */}
+                <div
+                  className="absolute inset-y-0 w-0.5 bg-white/70 rounded-full"
+                  style={{ left: `${estimatedPct}%`, transform: 'translateX(-50%)' }}
                 />
               </div>
+              {/* Invisible range input for interaction */}
+              <input
+                type="range"
+                min={minPrice}
+                max={maxPrice}
+                step={5000}
+                value={salePrice}
+                onChange={e => setSalePrice(Number(e.target.value))}
+                className="absolute inset-0 w-full opacity-0 cursor-pointer z-10"
+              />
+              {/* Custom thumb */}
+              <div
+                className="absolute top-1/2 w-5 h-5 rounded-full bg-white border-2 border-polar-ink/25 shadow-md pointer-events-none z-20"
+                style={{ left: `${sliderPct}%`, transform: 'translateX(-50%) translateY(-50%)' }}
+              />
+            </div>
+
+            {/* Min / ref / max labels */}
+            <div className="flex justify-between text-[10px] text-polar-ink-muted/60">
+              <span>{formatCurrency(minPrice)}</span>
+              <span>ref. {formatCurrency(financial.estimatedSalePrice)}</span>
+              <span>{formatCurrency(maxPrice)}</span>
             </div>
           </div>
 
-          {/* Margin summary */}
-          <div className={`mt-6 rounded-lg p-4 flex flex-wrap sm:flex-nowrap items-center justify-between gap-3 ${
-            financial.netMargin >= 20 ? 'bg-emerald-50 border border-emerald-200' :
-            financial.netMargin >= 15 ? 'bg-amber-50 border border-amber-200' :
-            'bg-red-50 border border-red-200'
-          }`}>
-            <div>
-              <div className="text-polar-ink text-sm font-medium">Margem líquida sobre investimento</div>
-              <div className="text-polar-ink-muted text-xs mt-0.5">
-                Lucro {formatCurrency(financial.netProfit)} · Investimento total {formatCurrency(financial.totalAcquisitionCost)}
-              </div>
+          {/* Projeção de venda */}
+          <div className="mt-6">
+            <ColLabel>Projeção de venda</ColLabel>
+            <div className="divide-y divide-polar-line">
+              <FinRow label="Venda estimada"         value={formatCurrency(salePrice)} highlight />
+              <FinRow label="Comissão agência (5%)"  value={formatCurrency(adj.agencyCommission)} neg />
+              <FinRow label="IVA comissão (23%)"     value={formatCurrency(adj.agencyVAT)} neg />
+              <FinRow label="IRS mais-valias"        value={formatCurrency(adj.capitalGainsTax)} neg />
+              <FinRow label="Certificado energético" value={formatCurrency(adj.energyCertificate)} neg />
             </div>
-            <span className={`text-3xl font-bold ${
-              financial.netMargin >= 20 ? 'text-emerald-600' :
-              financial.netMargin >= 15 ? 'text-amber-600' : 'text-red-500'
-            }`}>{formatPercent(financial.netMargin)}</span>
+            <div className="border-t border-polar-line mt-2 pt-2">
+              <FinRow
+                label="Lucro líquido"
+                value={formatCurrency(adj.netProfit)}
+                bold
+                positive={adj.netProfit >= 0}
+              />
+            </div>
           </div>
+
+          {/* Margin summary — updates with slider, inline styles for reliable color transitions */}
+          {(() => {
+            const [bg, border, numColor] =
+              adj.netMargin >= 25 ? ['#f0fdf4', '#bbf7d0', '#16a34a'] :
+              adj.netMargin >= 10 ? ['#fffbeb', '#fde68a', '#d97706'] :
+                                    ['#fef2f2', '#fecaca', '#ef4444']
+            return (
+              <div
+                className="mt-6 rounded-lg border p-4 flex flex-wrap sm:flex-nowrap items-center justify-between gap-3"
+                style={{ background: bg, borderColor: border, transition: 'background 0.3s, border-color 0.3s' }}
+              >
+                <div>
+                  <div className="text-polar-ink text-sm font-medium">Margem líquida sobre investimento</div>
+                  <div className="text-polar-ink-muted text-xs mt-0.5">
+                    Lucro {formatCurrency(adj.netProfit)} · Investimento total {formatCurrency(financial.totalAcquisitionCost)}
+                  </div>
+                </div>
+                <span
+                  className="text-3xl font-bold"
+                  style={{ color: numColor, transition: 'color 0.3s' }}
+                >
+                  {formatPercent(adj.netMargin)}
+                </span>
+              </div>
+            )
+          })()}
+
         </div>
       </section>
 
@@ -331,9 +413,9 @@ export default function ResultsView({ result, onBack }: Props) {
                         href={c.url}
                         target="_blank"
                         rel="noopener noreferrer"
-                        className="inline-flex items-center gap-1 text-xs font-semibold text-polar-purple hover:underline flex-shrink-0"
+                        className="inline-flex items-center gap-1.5 text-xs font-semibold text-polar-purple border border-polar-purple/30 bg-polar-purple/5 hover:bg-polar-purple/10 px-3 py-1.5 rounded-lg transition-colors flex-shrink-0"
                       >
-                        Ver <ExternalLink size={10}/>
+                        Ver imóvel <ExternalLink size={11}/>
                       </a>
                     )}
                   </div>

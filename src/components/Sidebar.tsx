@@ -1,6 +1,6 @@
-import { Search, History, FlaskConical, Trophy, BarChart2, Calculator, Building2, X } from 'lucide-react'
+import { Search, History, FlaskConical, Trophy, BarChart2, Calculator, Building2, X, TrendingUp } from 'lucide-react'
 
-type Screen = 'form' | 'loading' | 'results' | 'history'
+type Screen = 'form' | 'loading' | 'results' | 'history' | 'trends'
 
 interface Props {
   screen: Screen
@@ -82,6 +82,12 @@ export default function Sidebar({ screen, mockMode, onNavigate, onToggleMock, is
               active={screen === 'history'}
               onClick={() => nav('history')}
             />
+            <NavItem
+              icon={<TrendingUp size={15}/>}
+              label="Tendências"
+              active={screen === 'trends'}
+              onClick={() => nav('trends')}
+            />
           </>
         ) : (
           <>
@@ -105,6 +111,12 @@ export default function Sidebar({ screen, mockMode, onNavigate, onToggleMock, is
               label="Histórico"
               active={false}
               onClick={() => nav('history')}
+            />
+            <NavItem
+              icon={<TrendingUp size={15}/>}
+              label="Tendências"
+              active={false}
+              onClick={() => nav('trends')}
             />
           </>
         )}

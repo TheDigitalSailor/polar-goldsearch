@@ -756,21 +756,98 @@ function extractINEValue(response: any): number {
   return Number.isFinite(val) && val > 0 ? Math.round(val) : 0
 }
 
+// Municipality-level INE codes (alphanumeric, discovered via bulk API fetch May 2025)
+// Format: normalisedKeyword → [geoCode, regionLabel]
+// These override the national PT fallback with real local transaction data.
+const INE_MUNIC: Record<string, [string, string]> = {
+  // Lisboa municipality & neighbourhoods
+  'mouraria':    ['1A01106', 'Lisboa'], 'alfama':    ['1A01106', 'Lisboa'],
+  'bairro alto': ['1A01106', 'Lisboa'], 'chiado':    ['1A01106', 'Lisboa'],
+  'estrela':     ['1A01106', 'Lisboa'], 'lapa':      ['1A01106', 'Lisboa'],
+  'belem':       ['1A01106', 'Lisboa'], 'alcantara': ['1A01106', 'Lisboa'],
+  'alvalade':    ['1A01106', 'Lisboa'], 'benfica':   ['1A01106', 'Lisboa'],
+  'areeiro':     ['1A01106', 'Lisboa'], 'arroios':   ['1A01106', 'Lisboa'],
+  'lumiar':      ['1A01106', 'Lisboa'], 'marvila':   ['1A01106', 'Lisboa'],
+  'carnide':     ['1A01106', 'Lisboa'], 'saldanha':  ['1A01106', 'Lisboa'],
+  'intendente':  ['1A01106', 'Lisboa'], 'ajuda':     ['1A01106', 'Lisboa'],
+  'lisboa':      ['1A01106', 'Lisboa'], 'lisbon':    ['1A01106', 'Lisboa'],
+  // Lisboa concelhos
+  'cascais':     ['1A01105', 'Cascais'],   'estoril':    ['1A01105', 'Cascais'],
+  'oeiras':      ['1A01110', 'Oeiras'],    'carnaxide':  ['1A01110', 'Oeiras'],
+  'sintra':      ['1A01111', 'Sintra'],    'queluz':     ['1A01111', 'Sintra'],
+  'agualva':     ['1A01111', 'Sintra'],    'cacem':      ['1A01111', 'Sintra'],
+  'loures':      ['1A01107', 'Loures'],    'sacavem':    ['1A01107', 'Loures'],
+  'camarate':    ['1A01107', 'Loures'],    'moscavide':  ['1A01107', 'Loures'],
+  'alverca':     ['1A01114', 'Vila Franca de Xira'],
+  'vila franca de xira': ['1A01114', 'Vila Franca de Xira'],
+  'verdelha':    ['1A01114', 'Vila Franca de Xira'],
+  'odivelas':    ['1A01116', 'Odivelas'],  'amadora':    ['1A01115', 'Amadora'],
+  'mafra':       ['1A01109', 'Mafra'],     'ericeira':   ['1A01109', 'Mafra'],
+  // Setubal concelhos
+  'almada':      ['1B01503', 'Almada'],    'caparica':   ['1B01503', 'Almada'],
+  'seixal':      ['1B01509', 'Seixal'],    'barreiro':   ['1B01504', 'Barreiro'],
+  'setubal':     ['1B01511', 'Setubal'],   'palmela':    ['1B01508', 'Palmela'],
+  'sesimbra':    ['1B01510', 'Sesimbra'],  'montijo':    ['1B01506', 'Montijo'],
+  // Porto municipality & parishes
+  'porto':       ['11A1312', 'Porto'],     'oporto':     ['11A1312', 'Porto'],
+  'bonfim':      ['11A1312', 'Porto'],     'paranhos':   ['11A1312', 'Porto'],
+  'foz do douro':['11A1312', 'Porto'],     'boavista':   ['11A1312', 'Porto'],
+  // Porto concelhos
+  'matosinhos':  ['11A1308', 'Matosinhos'],
+  'gaia':        ['11A1317', 'Vila Nova de Gaia'],
+  'vila nova de gaia': ['11A1317', 'Vila Nova de Gaia'],
+  'maia':        ['11A1306', 'Maia'],      'gondomar':   ['11A1304', 'Gondomar'],
+  'valongo':     ['11A1315', 'Valongo'],   'ermesinde':  ['11A1315', 'Valongo'],
+  'povoa de varzim': ['11A1313', 'Povoa de Varzim'],
+  'vila do conde':   ['11A1316', 'Vila do Conde'],
+  // Braga
+  'braga':       ['1120303', 'Braga'],     'guimaraes':  ['1120304', 'Guimaraes'],
+  // Algarve concelhos
+  'loule':       ['1500808', 'Loule'],     'vilamoura':  ['1500808', 'Loule'],
+  'quarteira':   ['1500808', 'Loule'],     'almancil':   ['1500808', 'Loule'],
+  'lagos':       ['1500807', 'Lagos'],     'albufeira':  ['1500801', 'Albufeira'],
+  'portimao':    ['1500811', 'Portimao'],  'tavira':     ['1500814', 'Tavira'],
+  'faro':        ['1500804', 'Faro'],      'lagoa':      ['1500806', 'Lagoa'],
+  // Other
+  'funchal':     ['3003103', 'Funchal'],   'madeira':    ['3', 'Madeira'],
+  'acores':      ['2', 'Acores'],          'aveiro':     ['191', 'Regiao de Aveiro'],
+  'coimbra':     ['192', 'Regiao de Coimbra'],
+}
+
 async function fetchINEMarketData(address: string): Promise<INEMarketData | null> {
   const cityPart = extractCity(address)
-  const { region } = resolveNUTSCode(cityPart)
-  // Always use PT (national) — regional NUTS-2024 codes need separate discovery
-  const geoCode = 'PT'
+
+  // Resolve the most specific INE code: scan all address parts, pick longest keyword match
+  let geoCode = 'PT'
+  let geoRegion = 'Portugal'
+  let bestLen = 0
+  const parts = address.split(',').map((s) => normalise(s.trim()))
+  for (const part of parts) {
+    for (const kw of Object.keys(INE_MUNIC)) {
+      if ((part === kw || part.includes(kw) || kw.includes(part)) && kw.length > bestLen) {
+        geoCode = INE_MUNIC[kw][0]
+        geoRegion = INE_MUNIC[kw][1]
+        bestLen = kw.length
+      }
+    }
+  }
+  // Fall back to resolveNUTSCode region label for display (even if we use PT geo code)
+  const { region: nutsRegion } = resolveNUTSCode(cityPart)
+  const region = bestLen > 0 ? geoRegion : nutsRegion
+
+  console.log(`INE lookup: "${address}" -> geoCode=${geoCode} region=${region}`)
 
   // Try most-recent quarters first (INE publishes ~3 months after quarter end)
+  // If municipality code fails, fall back to national PT (always works)
+  const geoCandidates = geoCode !== 'PT' ? [geoCode, 'PT'] : ['PT']
   const quarters = ['S5A20254', 'S5A20253', 'S5A20252', 'S5A20244']
 
   for (const quarter of quarters) {
+    for (const geo of geoCandidates) {
     try {
-      // No Dim3 — omitting it makes the API accept the request and return all categories
       const url =
         `https://www.ine.pt/ine/json_indicador/pindica.jsp?op=2&varcd=0012234` +
-        `&Dim1=${quarter}&Dim2=${geoCode}&lang=PT`
+        `&Dim1=${quarter}&Dim2=${geo}&lang=PT`
       console.log(`INE fetch: ${url}`)
 
       const res = await fetch(url, {
@@ -817,11 +894,13 @@ async function fetchINEMarketData(address: string): Promise<INEMarketData | null
 
       const qMatch = quarter.match(/S5A(\d{4})(\d)/)
       const period = qMatch ? `Q${qMatch[2]} ${qMatch[1]}` : quarter
-
-      return { medianPricePerSqm, priceChangePct, period, region }
+      // Use the actual region for the geo code we succeeded with
+      const finalRegion = geo === 'PT' ? (bestLen > 0 ? region : 'Portugal') : region
+      return { medianPricePerSqm, priceChangePct, period, region: finalRegion }
     } catch (err) {
-      console.warn(`INE error (${quarter}):`, err)
+      console.warn(`INE error (${geo}/${quarter}):`, err)
     }
+    } // end geoCandidates loop
   }
 
   console.warn('INE: all attempts failed — returning null')
