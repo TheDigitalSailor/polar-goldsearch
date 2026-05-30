@@ -138,10 +138,6 @@ export default function MarketTrendsView() {
     return '#a78bfa'                                 // base violet
   }
 
-  const groupLabels: Record<string, string> = {
-    nacional: 'Nacional', norte: 'Norte', centro: 'Centro',
-    sul: 'Sul', ilhas: 'Ilhas',
-  }
 
   // Exclude national/Continente from regional chart (too broad)
   const chartRegions = data?.regions.filter(r => !['PT', '1'].includes(r.code)) ?? []
@@ -504,9 +500,8 @@ function Legend({ color, label, dashed }: { color: string; label: string; dashed
       <div
         className="w-4 h-0.5"
         style={{
-          backgroundColor: color,
-          backgroundImage: dashed ? `repeating-linear-gradient(to right, ${color} 0, ${color} 4px, transparent 4px, transparent 7px)` : undefined,
           backgroundColor: dashed ? 'transparent' : color,
+          backgroundImage: dashed ? `repeating-linear-gradient(to right, ${color} 0, ${color} 4px, transparent 4px, transparent 7px)` : undefined,
         }}
       />
       <span className="text-[10px] text-polar-ink-muted">{label}</span>
