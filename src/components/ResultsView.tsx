@@ -1,5 +1,5 @@
 import { useState, useMemo } from 'react'
-import { ArrowLeft, ExternalLink, TrendingDown, TrendingUp, Minus, Trophy, BarChart2, Calculator, Building2, MapPin, Info } from 'lucide-react'
+import { ArrowLeft, ExternalLink, TrendingDown, TrendingUp, Minus, Trophy, BarChart2, Calculator, Building2, MapPin, Info, Ruler, Clock } from 'lucide-react'
 import type { AnalysisResult, VerdictType, Valuation } from '../lib/types'
 import { formatCurrency, formatPercent } from '../lib/financial'
 
@@ -419,40 +419,53 @@ export default function ResultsView({ result, onBack }: Props) {
                   ? 'text-red-600 bg-red-100'
                   : 'text-amber-700 bg-amber-100'
 
-              // Days-on-market badge colour
-              const domColor = c.daysOnMarket <= 0     ? null
-                : c.daysOnMarket < 90  ? 'text-emerald-700 bg-emerald-50 border-emerald-200'
-                : c.daysOnMarket < 180 ? 'text-amber-700 bg-amber-50 border-amber-200'
-                :                        'text-red-600 bg-red-50 border-red-200'
+              // Days-on-market display
+              const domLabel = c.daysOnMarket <= 0 ? null
+                : c.daysOnMarket <= 1 ? 'Novo · 1 dia'
+                : `${c.daysOnMarket} dias`
+              const domColor = c.daysOnMarket <= 0 ? ''
+                : c.daysOnMarket < 90  ? 'text-emerald-600'
+                : c.daysOnMarket < 180 ? 'text-amber-600'
+                :                        'text-red-500'
+
+              // Diff badge
+              const isBelow = diff < -5
+              const isAboveMedian = diff > 5
 
               return (
                 <div key={i} className="rounded-xl border border-polar-line bg-white p-4 hover:shadow-card-md transition-shadow">
-                  {/* Price row */}
-                  <div className="flex items-start justify-between gap-2 mb-2">
-                    <div className="flex items-baseline gap-2 flex-wrap">
-                      <span className="text-lg font-bold text-polar-ink">{formatCurrency(c.price)}</span>
-                      <span className="text-xs text-polar-ink-muted">{formatCurrency(c.pricePerSqm)}/m²</span>
+
+                  {/* Top: location + diff badge */}
+                  <div className="flex items-start justify-between gap-3 mb-2">
+                    <div className="min-w-0">
+                      <p className="text-xs text-polar-ink-muted line-clamp-1">{c.location}</p>
+                      <div className="flex items-baseline gap-2 mt-1.5 flex-wrap">
+                        <span className="text-xl font-bold text-polar-ink">{formatCurrency(c.price)}</span>
+                        <span className="text-sm text-polar-ink-muted">{formatCurrency(c.pricePerSqm)}/m²</span>
+                      </div>
                     </div>
+
                     {diff !== 0 && (
-                      <span className={`text-xs font-semibold px-2 py-0.5 rounded-full flex-shrink-0 ${diffBadge}`}>
-                        {diff > 0 ? '+' : ''}{diff.toFixed(0)}% vs. med.
-                      </span>
+                      <div className="text-right flex-shrink-0">
+                        <div className="text-[10px] text-polar-ink-muted mb-1">vs. mediana da zona</div>
+                        <span className={`inline-flex items-center gap-1 text-sm font-bold px-3 py-1 rounded-xl ${diffBadge}`}>
+                          {isBelow ? <TrendingDown size={13}/> : isAboveMedian ? <TrendingUp size={13}/> : null}
+                          {Math.abs(diff).toFixed(0)}% {isBelow ? 'abaixo' : 'acima'}
+                        </span>
+                      </div>
                     )}
                   </div>
 
-                  {/* Title */}
-                  <p className="font-medium text-polar-ink text-sm leading-snug line-clamp-2 mb-1">{c.title}</p>
-
-                  {/* Location */}
-                  <p className="text-xs text-polar-ink-muted mb-3 line-clamp-1">{c.location}</p>
+                  {/* Divider */}
+                  <div className="border-t border-polar-line my-3" />
 
                   {/* Specs + link */}
                   <div className="flex items-center justify-between gap-3">
-                    <div className="flex items-center gap-2 flex-wrap">
-                      <span className="text-xs text-polar-ink-muted">{c.area} m²</span>
-                      {domColor && (
-                        <span className={`text-xs font-medium px-2 py-0.5 rounded-full border ${domColor}`}>
-                          {c.daysOnMarket} dias em oferta
+                    <div className="flex items-center gap-3 text-xs text-polar-ink-muted">
+                      <span className="flex items-center gap-1"><Ruler size={11}/> {c.area} m²</span>
+                      {domLabel && (
+                        <span className={`flex items-center gap-1 font-medium ${domColor}`}>
+                          <Clock size={11}/> {domLabel}
                         </span>
                       )}
                     </div>

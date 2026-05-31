@@ -972,7 +972,12 @@ async function estimateValuation(
     ? `Referência INE (mediana nacional de TRANSAÇÕES reais, ${ineData.period}): ${ineData.medianPricePerSqm.toFixed(0)} €/m² — inclui zonas rurais, tende a subestimar mercados urbanos.`
     : 'Referência INE: indisponível.'
 
-  const prompt = `És um avaliador imobiliário sénior em Portugal. Estima o VALOR DE TRANSAÇÃO REALISTA (preço a que o imóvel se vende efectivamente, não o preço pedido) para esta zona e tipologia.
+  const userNotes = (property.comments as string | undefined)?.trim()
+  const notesSection = userNotes
+    ? `\nNOTAS DO UTILIZADOR (podem conter defeitos que desvalorizam — ex.: andar alto sem elevador, ruído, exposição solar má, sem estacionamento, prédio degradado):\n<notas>\n${userNotes}\n</notas>`
+    : ''
+
+  const prompt = `És um avaliador imobiliário sénior em Portugal, conservador por princípio. Estima o VALOR DE TRANSAÇÃO REALISTA (preço a que o imóvel se vende efectivamente, não o preço pedido) para esta zona e tipologia.
 
 IMÓVEL:
 - Morada: ${property.address}
@@ -981,14 +986,15 @@ IMÓVEL:
 - Preço pedido deste imóvel: ${askingPpsm} €/m²
 
 ${localSection}
-${ineSection}
+${ineSection}${notesSection}
 
-REGRAS DE AVALIAÇÃO:
-- Os preços PEDIDOS no Imovirtual estão tipicamente 8–18% acima do preço de transação efectiva (vendedores pedem alto e negoceiam; anúncios antigos inflacionam o topo do intervalo).
-- O valor INE nacional é um piso conservador para zonas urbanas.
-- Ancora a mediana de transação ENTRE o INE e a mediana pedida, mais perto do valor realista de venda nesta zona específica.
-- Ajusta pela condição (imóveis a precisar de obras transaccionam abaixo).
-- Devolve €/m² de TRANSAÇÃO, não pedidos. min/max devem refletir a dispersão real de fecho, não os extremos dos anúncios.
+REGRAS DE AVALIAÇÃO (sê CONSERVADOR — é pior sobreavaliar do que subavaliar):
+- Os preços PEDIDOS no Imovirtual estão tipicamente 12–20% acima do preço de transação efectiva. Anúncios antigos e outliers caros inflacionam o topo — IGNORA os extremos.
+- O valor INE é uma referência de transação real; ancora a tua mediana ENTRE o INE e a mediana pedida, claramente mais próxima do INE do que do pedido.
+- Usa o teu conhecimento específico desta zona/morada (centralidade, prestígio, procura, liquidez) para ajustar.
+- Ajusta para BAIXO pela condição (obras necessárias) e por qualquer defeito nas NOTAS DO UTILIZADOR (ex.: 4.º andar sem elevador pode desvalorizar 5–15%).
+- O valor MÁXIMO é o topo REALISTA de venda (mediana + prémio modesto), NÃO o anúncio mais caro. Não deve parecer um "negócio irreal".
+- Devolve €/m² de TRANSAÇÃO. Na dúvida, arredonda para baixo.
 
 Chama a ferramenta submeter_avaliacao com os valores.`
 
@@ -1021,14 +1027,31 @@ Chama a ferramenta submeter_avaliacao com os valores.`
     const input = (toolUse as any)?.input
     if (!input) return null
 
-    const median = Math.round(Number(input.valorMedianoPorM2))
+    let median = Math.round(Number(input.valorMedianoPorM2))
+    if (!Number.isFinite(median) || median <= 0) return null
+
+    const area = property.area as number
+
+    // Floor: the fair value must sit at least max(50 000 €, 15% of the asking-derived
+    // value) below the asking median — sellers list high, and we never want the headline
+    // "valor justo" to read like an unrealistic windfall. Scales with price size.
+    if (marketStats.medianPricePerSqm > 0 && area > 0) {
+      const askingMedianTotal = marketStats.medianPricePerSqm * area
+      const discount = Math.max(50000, askingMedianTotal * 0.15)
+      const ceilingPerSqm = Math.round(Math.max(0, askingMedianTotal - discount) / area)
+      if (ceilingPerSqm > 0 && median > ceilingPerSqm) median = ceilingPerSqm
+    }
+
+    // Tether the range to the (conservative) median so the "topo" reflects a realistic
+    // top-of-market sale, not the single most expensive asking listing.
     let min = Math.round(Number(input.valorMinimoPorM2))
     let max = Math.round(Number(input.valorMaximoPorM2))
-    if (!Number.isFinite(median) || median <= 0) return null
-    if (!Number.isFinite(min) || min <= 0) min = Math.round(median * 0.85)
-    if (!Number.isFinite(max) || max <= 0) max = Math.round(median * 1.15)
-    if (min > median) min = Math.round(median * 0.85)
-    if (max < median) max = Math.round(median * 1.15)
+    if (!Number.isFinite(min) || min <= 0) min = Math.round(median * 0.90)
+    if (!Number.isFinite(max) || max <= 0) max = Math.round(median * 1.10)
+    min = Math.min(min, median)
+    max = Math.max(max, median)
+    min = Math.max(min, Math.round(median * 0.85))   // not below −15% of median
+    max = Math.min(max, Math.round(median * 1.12))   // not above +12% of median
 
     return {
       fairPricePerSqm: median,
@@ -1046,21 +1069,25 @@ Chama a ferramenta submeter_avaliacao com os valores.`
 function fallbackValuation(
   marketStats: ReturnType<typeof calcMarketStats>,
   ineData: INEMarketData | null,
+  area: number,
 ): Valuation {
-  if (marketStats.medianPricePerSqm > 0) {
-    const median = Math.round(marketStats.medianPricePerSqm * 0.88) // ~12% asking→transaction haircut
+  if (marketStats.medianPricePerSqm > 0 && area > 0) {
+    // Same floor as the Claude path: at least max(50 000 €, 15%) below asking.
+    const askingMedianTotal = marketStats.medianPricePerSqm * area
+    const discount = Math.max(50000, askingMedianTotal * 0.15)
+    const median = Math.round(Math.max(0, askingMedianTotal - discount) / area)
     return {
       fairPricePerSqm: median,
-      minPricePerSqm: Math.round((marketStats.min || median * 0.85) * 0.92),
-      maxPricePerSqm: Math.round((marketStats.max || median * 1.15) * 0.92),
-      rationale: 'Estimativa determinística (desconto ~12% sobre preços pedidos).',
+      minPricePerSqm: Math.round(median * 0.90),
+      maxPricePerSqm: Math.round(median * 1.10),
+      rationale: 'Estimativa determinística (desconto mínimo de 50 000 € ou 15% sobre preços pedidos).',
     }
   }
   const base = ineData && ineData.medianPricePerSqm > 0 ? ineData.medianPricePerSqm : 0
   return {
     fairPricePerSqm: base,
-    minPricePerSqm: Math.round(base * 0.85),
-    maxPricePerSqm: Math.round(base * 1.2),
+    minPricePerSqm: Math.round(base * 0.9),
+    maxPricePerSqm: Math.round(base * 1.1),
     rationale: 'Estimativa baseada na mediana nacional INE.',
   }
 }
@@ -1240,7 +1267,7 @@ serve(async (req) => {
     // asking comparables + INE benchmark + condition (NOT a blind haircut). The raw
     // asking stats stay on screen separately as a market reference.
     const valuation = (await estimateValuation(property, marketStats, ineData, anthropicKey))
-      ?? fallbackValuation(marketStats, ineData)
+      ?? fallbackValuation(marketStats, ineData, area)
 
     // 4. Estimated sale price = fair transaction value × area
     const estimatedSalePrice =
