@@ -933,11 +933,144 @@ function calcMarketStats(comparables: Comparable[], _area: number) {
   }
 }
 
+// ─── Claude valuation ───────────────────────────────────────────────────────
+// Imovirtual gives ASKING prices, which sit well above real transaction values
+// (sellers list high and negotiate down; stale listings inflate the range). INE
+// gives a rural-inclusive national median that under-shoots urban markets. Rather
+// than apply a blind flat haircut, we ask Claude to triangulate a realistic
+// TRANSACTION value range for this specific zone + typology + condition.
+
+interface Valuation {
+  fairPricePerSqm: number
+  minPricePerSqm: number
+  maxPricePerSqm: number
+  rationale: string
+}
+
+async function estimateValuation(
+  property: Record<string, unknown>,
+  marketStats: ReturnType<typeof calcMarketStats>,
+  ineData: INEMarketData | null,
+  anthropicKey: string,
+): Promise<Valuation | null> {
+  const conditionLabels: Record<string, string> = {
+    bad: 'Mau estado (obras estruturais)',
+    renovation: 'Remodelação necessária',
+    good: 'Bom estado',
+    renovated: 'Remodelado',
+  }
+
+  const askingPpsm = Math.round((property.askingPrice as number) / (property.area as number))
+
+  const localSection = marketStats.count > 0
+    ? `Mercado local Imovirtual (PREÇOS PEDIDOS, ${marketStats.count} anúncios de tipologias próximas):
+- Mediana pedida: ${marketStats.medianPricePerSqm.toFixed(0)} €/m²
+- Intervalo pedido: ${marketStats.min.toFixed(0)} – ${marketStats.max.toFixed(0)} €/m²`
+    : 'Mercado local Imovirtual: sem anúncios activos suficientes.'
+
+  const ineSection = ineData
+    ? `Referência INE (mediana nacional de TRANSAÇÕES reais, ${ineData.period}): ${ineData.medianPricePerSqm.toFixed(0)} €/m² — inclui zonas rurais, tende a subestimar mercados urbanos.`
+    : 'Referência INE: indisponível.'
+
+  const prompt = `És um avaliador imobiliário sénior em Portugal. Estima o VALOR DE TRANSAÇÃO REALISTA (preço a que o imóvel se vende efectivamente, não o preço pedido) para esta zona e tipologia.
+
+IMÓVEL:
+- Morada: ${property.address}
+- Tipologia: ${property.typology}, ${property.area} m²
+- Condição: ${conditionLabels[property.condition as string] ?? property.condition}
+- Preço pedido deste imóvel: ${askingPpsm} €/m²
+
+${localSection}
+${ineSection}
+
+REGRAS DE AVALIAÇÃO:
+- Os preços PEDIDOS no Imovirtual estão tipicamente 8–18% acima do preço de transação efectiva (vendedores pedem alto e negoceiam; anúncios antigos inflacionam o topo do intervalo).
+- O valor INE nacional é um piso conservador para zonas urbanas.
+- Ancora a mediana de transação ENTRE o INE e a mediana pedida, mais perto do valor realista de venda nesta zona específica.
+- Ajusta pela condição (imóveis a precisar de obras transaccionam abaixo).
+- Devolve €/m² de TRANSAÇÃO, não pedidos. min/max devem refletir a dispersão real de fecho, não os extremos dos anúncios.
+
+Chama a ferramenta submeter_avaliacao com os valores.`
+
+  try {
+    const client = new Anthropic({ apiKey: anthropicKey })
+    const message = await client.messages.create({
+      model: 'claude-sonnet-4-6',
+      max_tokens: 512,
+      tools: [{
+        name: 'submeter_avaliacao',
+        description: 'Submete a avaliação de valor de transação realista do imóvel.',
+        input_schema: {
+          type: 'object',
+          properties: {
+            valorMedianoPorM2: { type: 'number', description: 'Valor mediano realista de TRANSAÇÃO por m².' },
+            valorMinimoPorM2: { type: 'number', description: 'Limite inferior realista de transação por m².' },
+            valorMaximoPorM2: { type: 'number', description: 'Limite superior realista de transação por m².' },
+            justificacao: { type: 'string', description: 'Uma frase curta a explicar a estimativa.' },
+          },
+          required: ['valorMedianoPorM2', 'valorMinimoPorM2', 'valorMaximoPorM2'],
+        },
+      }],
+      tool_choice: { type: 'tool', name: 'submeter_avaliacao' },
+      messages: [{ role: 'user', content: prompt }],
+    })
+
+    // deno-lint-ignore no-explicit-any
+    const toolUse = message.content.find((c: any) => c.type === 'tool_use')
+    // deno-lint-ignore no-explicit-any
+    const input = (toolUse as any)?.input
+    if (!input) return null
+
+    const median = Math.round(Number(input.valorMedianoPorM2))
+    let min = Math.round(Number(input.valorMinimoPorM2))
+    let max = Math.round(Number(input.valorMaximoPorM2))
+    if (!Number.isFinite(median) || median <= 0) return null
+    if (!Number.isFinite(min) || min <= 0) min = Math.round(median * 0.85)
+    if (!Number.isFinite(max) || max <= 0) max = Math.round(median * 1.15)
+    if (min > median) min = Math.round(median * 0.85)
+    if (max < median) max = Math.round(median * 1.15)
+
+    return {
+      fairPricePerSqm: median,
+      minPricePerSqm: min,
+      maxPricePerSqm: max,
+      rationale: typeof input.justificacao === 'string' ? input.justificacao : '',
+    }
+  } catch (err) {
+    console.error('estimateValuation error:', err)
+    return null
+  }
+}
+
+/** Deterministic fallback when the Claude valuation is unavailable. */
+function fallbackValuation(
+  marketStats: ReturnType<typeof calcMarketStats>,
+  ineData: INEMarketData | null,
+): Valuation {
+  if (marketStats.medianPricePerSqm > 0) {
+    const median = Math.round(marketStats.medianPricePerSqm * 0.88) // ~12% asking→transaction haircut
+    return {
+      fairPricePerSqm: median,
+      minPricePerSqm: Math.round((marketStats.min || median * 0.85) * 0.92),
+      maxPricePerSqm: Math.round((marketStats.max || median * 1.15) * 0.92),
+      rationale: 'Estimativa determinística (desconto ~12% sobre preços pedidos).',
+    }
+  }
+  const base = ineData && ineData.medianPricePerSqm > 0 ? ineData.medianPricePerSqm : 0
+  return {
+    fairPricePerSqm: base,
+    minPricePerSqm: Math.round(base * 0.85),
+    maxPricePerSqm: Math.round(base * 1.2),
+    rationale: 'Estimativa baseada na mediana nacional INE.',
+  }
+}
+
 // ─── Claude analysis ──────────────────────────────────────────────────────────
 
 async function generateAnalysis(
   property: Record<string, unknown>,
   marketStats: ReturnType<typeof calcMarketStats>,
+  valuation: Valuation,
   ineData: INEMarketData | null,
   financial: ReturnType<typeof calculateFinancials>,
   verdict: string,
@@ -967,10 +1100,12 @@ async function generateAnalysis(
 
   const comparablesSection = marketStats.count > 0
     ? `\nMERCADO LOCAL — Imovirtual (${marketStats.count} anúncios activos, tipologias próximas):
-- Mediana pedida por m²: ${marketStats.medianPricePerSqm.toFixed(0)} €/m²
-- Range: ${marketStats.min.toFixed(0)} – ${marketStats.max.toFixed(0)} €/m²
-- O preço estimado de venda usa esta mediana com desconto de 10% para simular o gap pedido→transação.`
-    : '\nMERCADO LOCAL: Sem comparáveis activos disponíveis — estimativa de venda baseada na mediana INE.'
+- Mediana PEDIDA por m²: ${marketStats.medianPricePerSqm.toFixed(0)} €/m² (intervalo pedido ${marketStats.min.toFixed(0)} – ${marketStats.max.toFixed(0)} €/m²)`
+    : '\nMERCADO LOCAL: Sem comparáveis activos disponíveis.'
+
+  const valuationSection = `\nAVALIAÇÃO DE TRANSAÇÃO (valor realista de venda, já descontado do gap pedido→transação):
+- Valor justo estimado: ${valuation.fairPricePerSqm.toLocaleString('pt-PT')} €/m² (intervalo ${valuation.minPricePerSqm.toLocaleString('pt-PT')} – ${valuation.maxPricePerSqm.toLocaleString('pt-PT')} €/m²)
+- Esta é a base de pricing — usa-a (não os preços pedidos) ao avaliar o posicionamento.`
 
   const prompt = `És um analista de investimento imobiliário sénior a trabalhar para a Polar Investimentos. Analisa este imóvel e fornece um veredicto fundamentado.
 
@@ -982,6 +1117,7 @@ IMÓVEL:
 - Estimativa de obras: ${(property.renovationCost as number).toLocaleString('pt-PT')} €${userNotesSection}
 ${ineSection}
 ${comparablesSection}
+${valuationSection}
 
 ANÁLISE FINANCEIRA:
 - Investimento total: ${financial.totalAcquisitionCost.toLocaleString('pt-PT')} € (inclui IMT ${financial.imt.toLocaleString('pt-PT')} €)
@@ -1097,32 +1233,30 @@ serve(async (req) => {
       fetchINEMarketData(address),
     ])
 
-    // 2. Market stats from Imovirtual listings
+    // 2. Market stats from Imovirtual listings (raw ASKING prices)
     const marketStats = calcMarketStats(comparables, area)
 
-    // 3. Estimated sale price
-    // INE gives the NATIONAL median (all of Portugal, including rural), so it under-estimates
-    // prices in urban / high-demand markets. Imovirtual asking prices are market-specific and
-    // already filtered to comparable typologies — we apply a 10% haircut to simulate the
-    // asking→transaction gap and use them as the primary estimator when available.
-    // INE data remains on screen as a national benchmark, not as the pricing basis.
-    const imovMedianPpsm = marketStats.medianPricePerSqm  // asking prices, comparable typology
-    const estimatedSalePrice =
-      imovMedianPpsm > 0
-        ? Math.round(imovMedianPpsm * area * 0.90)        // 10% haircut on asking prices
-        : ineData && ineData.medianPricePerSqm > 0
-          ? Math.round(ineData.medianPricePerSqm * area)  // fallback: INE national
-          : Math.round(askingPrice * 1.05)                // last resort: small premium
+    // 3. Transaction valuation — Claude triangulates a realistic sale value from the
+    // asking comparables + INE benchmark + condition (NOT a blind haircut). The raw
+    // asking stats stay on screen separately as a market reference.
+    const valuation = (await estimateValuation(property, marketStats, ineData, anthropicKey))
+      ?? fallbackValuation(marketStats, ineData)
 
-    // 4. Financials & verdict
+    // 4. Estimated sale price = fair transaction value × area
+    const estimatedSalePrice =
+      valuation.fairPricePerSqm > 0
+        ? Math.round(valuation.fairPricePerSqm * area)
+        : Math.round(askingPrice * 1.05)                // last resort: small premium
+
+    // 5. Financials & verdict
     const financial = calculateFinancials(askingPrice, renovationCost, estimatedSalePrice)
     const verdict = getVerdict(financial.netMargin)
 
-    // 5. AI analysis
-    const aiAnalysis = await generateAnalysis(property, marketStats, ineData, financial, verdict, anthropicKey)
+    // 6. AI analysis
+    const aiAnalysis = await generateAnalysis(property, marketStats, valuation, ineData, financial, verdict, anthropicKey)
 
     const result = {
-      property, comparables, marketStats, ineData, financial, verdict, aiAnalysis,
+      property, comparables, marketStats, valuation, ineData, financial, verdict, aiAnalysis,
       createdAt: new Date().toISOString(),
     }
 

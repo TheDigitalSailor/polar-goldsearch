@@ -26,6 +26,12 @@ export const MOCK_RESULT: AnalysisResult = {
     averagePricePerSqm: 3373,
     count: 6,
   },
+  valuation: {
+    fairPricePerSqm: 2900,
+    minPricePerSqm: 2500,
+    maxPricePerSqm: 3350,
+    rationale: 'Ancorado entre a mediana INE e os preços pedidos, com desconto pedido→transação de ~12% e ajuste pela necessidade de obras.',
+  },
   financial: {
     purchasePrice: 195000,
     imt: 13650,

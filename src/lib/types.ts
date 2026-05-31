@@ -33,6 +33,18 @@ export interface MarketStats {
   count: number
 }
 
+/**
+ * Transaction-realistic fair-value estimate produced by Claude from the
+ * Imovirtual asking comparables + INE benchmark + property condition.
+ * Distinct from MarketStats, which reflects raw *asking* prices.
+ */
+export interface Valuation {
+  fairPricePerSqm: number   // realistic transaction median €/m²
+  minPricePerSqm: number    // realistic transaction range, low
+  maxPricePerSqm: number    // realistic transaction range, high
+  rationale?: string        // short note on how the estimate was derived
+}
+
 export interface FinancialBreakdown {
   // Costs
   purchasePrice: number
@@ -69,6 +81,7 @@ export interface AnalysisResult {
   property: PropertyInput
   comparables: Comparable[]
   marketStats: MarketStats
+  valuation: Valuation
   ineData: INEMarketData | null
   financial: FinancialBreakdown
   verdict: VerdictType

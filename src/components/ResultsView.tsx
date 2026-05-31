@@ -1,6 +1,6 @@
 import { useState, useMemo } from 'react'
-import { ArrowLeft, ExternalLink, Clock, Ruler, TrendingDown, TrendingUp, Minus, Trophy, BarChart2, Calculator, Building2, MapPin, Info } from 'lucide-react'
-import type { AnalysisResult, VerdictType } from '../lib/types'
+import { ArrowLeft, ExternalLink, TrendingDown, TrendingUp, Minus, Trophy, BarChart2, Calculator, Building2, MapPin, Info } from 'lucide-react'
+import type { AnalysisResult, VerdictType, Valuation } from '../lib/types'
 import { formatCurrency, formatPercent } from '../lib/financial'
 
 interface Props {
@@ -21,6 +21,14 @@ const verdictConfig: Record<VerdictType, {
 export default function ResultsView({ result, onBack }: Props) {
   const { property, comparables, marketStats, ineData, financial, verdict, aiAnalysis } = result
   const cfg = verdictConfig[verdict]
+
+  // Transaction valuation drives the price positioning. Older saved analyses
+  // predate this field — fall back to a ~12% haircut on asking stats.
+  const valuation: Valuation = result.valuation ?? {
+    fairPricePerSqm: Math.round(marketStats.medianPricePerSqm * 0.88),
+    minPricePerSqm: Math.round(marketStats.min * 0.92),
+    maxPricePerSqm: Math.round(marketStats.max * 0.92),
+  }
 
   // ── Sale price slider state ───────────────────────────────────────────────
   const [salePrice, setSalePrice] = useState(financial.estimatedSalePrice)
@@ -56,13 +64,13 @@ export default function ResultsView({ result, onBack }: Props) {
   }, [salePrice, financial])
 
   const askingPricePerSqm = Math.round(property.askingPrice / property.area)
-  const priceDiff = marketStats.medianPricePerSqm > 0
-    ? ((askingPricePerSqm - marketStats.medianPricePerSqm) / marketStats.medianPricePerSqm) * 100
+  const priceDiff = valuation.fairPricePerSqm > 0
+    ? ((askingPricePerSqm - valuation.fairPricePerSqm) / valuation.fairPricePerSqm) * 100
     : 0
 
-  const range = (marketStats.max - marketStats.min) || 1
-  const propertyBarPos = Math.min(95, Math.max(5, ((askingPricePerSqm - marketStats.min) / range) * 100))
-  const medianBarPos   = Math.min(95, Math.max(5, ((marketStats.medianPricePerSqm - marketStats.min) / range) * 100))
+  const range = (valuation.maxPricePerSqm - valuation.minPricePerSqm) || 1
+  const propertyBarPos = Math.min(95, Math.max(5, ((askingPricePerSqm - valuation.minPricePerSqm) / range) * 100))
+  const medianBarPos   = Math.min(95, Math.max(5, ((valuation.fairPricePerSqm - valuation.minPricePerSqm) / range) * 100))
 
   const isBelow = priceDiff < -5
   const isAbove = priceDiff > 5
@@ -104,17 +112,17 @@ export default function ResultsView({ result, onBack }: Props) {
             />
             <PricePoint
               icon="🟡"
-              label="Preço justo de mercado"
-              price={formatCurrency(Math.round(marketStats.medianPricePerSqm * property.area))}
-              perSqm={`${formatCurrency(marketStats.medianPricePerSqm)}/m² mediana`}
+              label="Valor justo (transação)"
+              price={formatCurrency(Math.round(valuation.fairPricePerSqm * property.area))}
+              perSqm={`${formatCurrency(valuation.fairPricePerSqm)}/m² mediana`}
               color="text-amber-600"
               align="center"
             />
             <PricePoint
               icon="🔴"
               label="Topo do mercado"
-              price={formatCurrency(Math.round(marketStats.max * property.area))}
-              perSqm={`${formatCurrency(marketStats.max)}/m² máximo`}
+              price={formatCurrency(Math.round(valuation.maxPricePerSqm * property.area))}
+              perSqm={`${formatCurrency(valuation.maxPricePerSqm)}/m² máximo`}
               color="text-red-500"
               align="right"
             />
@@ -150,18 +158,23 @@ export default function ResultsView({ result, onBack }: Props) {
           </div>
 
           <div className="flex justify-between items-center text-xs text-polar-ink-muted mb-2">
-            <span className="hidden sm:inline">Mín {formatCurrency(marketStats.min)}/m²</span>
+            <span className="hidden sm:inline">Mín {formatCurrency(valuation.minPricePerSqm)}/m²</span>
             <span className={`flex items-center gap-1 font-semibold text-sm ${
               isBelow ? 'text-emerald-600' : isAbove ? 'text-red-500' : 'text-amber-600'
             }`}>
               {isBelow ? <TrendingDown size={13}/> : isAbove ? <TrendingUp size={13}/> : <Minus size={13}/>}
-              {priceDiff > 0 ? '+' : ''}{priceDiff.toFixed(1)}% vs. mediana
+              {priceDiff > 0 ? '+' : ''}{priceDiff.toFixed(1)}% vs. valor justo
             </span>
-            <span className="hidden sm:inline">Máx {formatCurrency(marketStats.max)}/m²</span>
+            <span className="hidden sm:inline">Máx {formatCurrency(valuation.maxPricePerSqm)}/m²</span>
           </div>
           <p className="text-xs text-polar-ink-muted/60 text-center">
-            {comparables.length} imóveis activos na zona · máx. 18 meses no mercado
+            {comparables.length} imóveis activos na zona · valor justo estimado por IA (transação, não preço pedido)
           </p>
+          {valuation.rationale && (
+            <p className="text-[10px] text-polar-ink-muted/50 text-center mt-1.5 max-w-md mx-auto leading-relaxed">
+              {valuation.rationale}
+            </p>
+          )}
         </div>
       </section>
 
@@ -170,6 +183,15 @@ export default function ResultsView({ result, onBack }: Props) {
         <section id="market">
           <SectionLabel icon={<MapPin size={13}/>}>Mercado local · Imovirtual</SectionLabel>
           <div className="card">
+
+            {/* Disclaimer at top — compact one-liner */}
+            <div className="flex gap-1.5 mb-5 pb-4 border-b border-polar-line">
+              <Info size={12} className="text-polar-ink-muted/40 flex-shrink-0 mt-0.5" />
+              <p className="text-[10px] text-polar-ink-muted/55 leading-relaxed">
+                Preços de <strong className="font-medium">oferta</strong> activos no Imovirtual para tipologias próximas —
+                reflectem valores pedidos, não preços de transacção efectiva.
+              </p>
+            </div>
 
             {/* Three stats */}
             <div className="grid grid-cols-3 gap-2 sm:gap-6 mb-5">
@@ -191,26 +213,44 @@ export default function ResultsView({ result, onBack }: Props) {
               </div>
             </div>
 
-            {/* INE trend footnote — kept only as market momentum signal, not as pricing reference */}
-            {ineData?.priceChangePct !== null && ineData && (
-              <div className={`inline-flex items-center gap-1.5 text-xs font-medium px-2.5 py-1 rounded-full mb-4 ${
-                ineData.priceChangePct! > 0 ? 'bg-emerald-50 text-emerald-700' : 'bg-red-50 text-red-600'
-              }`}>
-                {ineData.priceChangePct! > 0 ? <TrendingUp size={11}/> : <TrendingDown size={11}/>}
-                Mercado nacional {ineData.priceChangePct! > 0 ? '+' : ''}{ineData.priceChangePct!.toFixed(1)}% a.a. · INE {ineData.period}
-              </div>
-            )}
+            {/* INE regional comparison — asking vs transaction + YoY trend */}
+            {ineData && ineData.medianPricePerSqm > 0 && (() => {
+              const premium = ((marketStats.medianPricePerSqm - ineData.medianPricePerSqm) / ineData.medianPricePerSqm) * 100
+              return (
+                <div className="rounded-lg bg-polar-bg border border-polar-line p-3 flex flex-wrap sm:flex-nowrap items-center gap-3 sm:gap-5">
+                  {/* INE price */}
+                  <div className="flex-1 min-w-0">
+                    <div className="text-[10px] text-polar-ink-muted mb-0.5">
+                      INE · {ineData.region} · {ineData.period}
+                    </div>
+                    <div className="text-sm font-semibold text-polar-ink">
+                      {formatCurrency(ineData.medianPricePerSqm)}<span className="text-xs font-normal text-polar-ink-muted">/m² (transação)</span>
+                    </div>
+                  </div>
 
-            {/* Disclaimer */}
-            <div className="flex gap-2 bg-polar-bg rounded-lg p-3 border border-polar-line">
-              <Info size={13} className="text-polar-ink-muted/50 flex-shrink-0 mt-0.5" />
-              <p className="text-[10px] sm:text-xs text-polar-ink-muted/70 leading-relaxed">
-                Preços de oferta activos no Imovirtual para tipologias próximas na área deste imóvel,
-                com cobertura ao nível de freguesia ou concelho conforme a densidade de anúncios disponíveis.
-                Reflectem valores pedidos, não preços de transacção efectiva — servem como referência de
-                mercado e não como base exclusiva para decisão de investimento.
-              </p>
-            </div>
+                  {/* Asking vs transaction premium */}
+                  <div className="text-right sm:border-l sm:border-polar-line sm:pl-5">
+                    <div className="text-[10px] text-polar-ink-muted mb-0.5">Oferta vs. transação</div>
+                    <div className={`text-sm font-semibold ${premium > 15 ? 'text-amber-600' : 'text-emerald-600'}`}>
+                      {premium > 0 ? '+' : ''}{premium.toFixed(0)}%
+                    </div>
+                  </div>
+
+                  {/* YoY change */}
+                  {ineData.priceChangePct != null && (
+                    <div className="text-right sm:border-l sm:border-polar-line sm:pl-5">
+                      <div className="text-[10px] text-polar-ink-muted mb-0.5">Variação a.a.</div>
+                      <div className={`text-sm font-semibold flex items-center justify-end gap-1 ${
+                        ineData.priceChangePct > 0 ? 'text-emerald-600' : 'text-red-500'
+                      }`}>
+                        {ineData.priceChangePct > 0 ? <TrendingUp size={11}/> : <TrendingDown size={11}/>}
+                        {ineData.priceChangePct > 0 ? '+' : ''}{ineData.priceChangePct.toFixed(1)}%
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )
+            })()}
 
           </div>
         </section>
@@ -379,6 +419,12 @@ export default function ResultsView({ result, onBack }: Props) {
                   ? 'text-red-600 bg-red-100'
                   : 'text-amber-700 bg-amber-100'
 
+              // Days-on-market badge colour
+              const domColor = c.daysOnMarket <= 0     ? null
+                : c.daysOnMarket < 90  ? 'text-emerald-700 bg-emerald-50 border-emerald-200'
+                : c.daysOnMarket < 180 ? 'text-amber-700 bg-amber-50 border-amber-200'
+                :                        'text-red-600 bg-red-50 border-red-200'
+
               return (
                 <div key={i} className="rounded-xl border border-polar-line bg-white p-4 hover:shadow-card-md transition-shadow">
                   {/* Price row */}
@@ -389,7 +435,7 @@ export default function ResultsView({ result, onBack }: Props) {
                     </div>
                     {diff !== 0 && (
                       <span className={`text-xs font-semibold px-2 py-0.5 rounded-full flex-shrink-0 ${diffBadge}`}>
-                        {diff > 0 ? '+' : ''}{diff.toFixed(0)}%
+                        {diff > 0 ? '+' : ''}{diff.toFixed(0)}% vs. med.
                       </span>
                     )}
                   </div>
@@ -401,11 +447,13 @@ export default function ResultsView({ result, onBack }: Props) {
                   <p className="text-xs text-polar-ink-muted mb-3 line-clamp-1">{c.location}</p>
 
                   {/* Specs + link */}
-                  <div className="flex items-center justify-between gap-4">
-                    <div className="flex items-center gap-4 text-xs text-polar-ink-muted">
-                      <span className="flex items-center gap-1"><Ruler size={11}/> {c.area} m²</span>
-                      {c.daysOnMarket > 0 && (
-                        <span className="flex items-center gap-1"><Clock size={11}/> {c.daysOnMarket}d</span>
+                  <div className="flex items-center justify-between gap-3">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span className="text-xs text-polar-ink-muted">{c.area} m²</span>
+                      {domColor && (
+                        <span className={`text-xs font-medium px-2 py-0.5 rounded-full border ${domColor}`}>
+                          {c.daysOnMarket} dias em oferta
+                        </span>
                       )}
                     </div>
                     {c.url && (
