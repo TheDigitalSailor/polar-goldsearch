@@ -15,6 +15,7 @@ type Screen = 'form' | 'loading' | 'results' | 'history' | 'trends'
 export default function App() {
   const [screen, setScreen] = useState<Screen>('form')
   const [result, setResult] = useState<AnalysisResult | null>(null)
+  const [editingProperty, setEditingProperty] = useState<PropertyInput | null>(null)
   const [history, setHistory] = useState<AnalysisSummary[]>([])
   const [historyLoading, setHistoryLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -31,6 +32,7 @@ export default function App() {
 
   async function handleAnalyze(property: PropertyInput) {
     setError(null)
+    setEditingProperty(null)
     setScreen('loading')
     try {
       const data = await analyzeProperty(property)
@@ -40,6 +42,12 @@ export default function App() {
       setError(err instanceof Error ? err.message : 'Erro desconhecido')
       setScreen('form')
     }
+  }
+
+  function handleEdit() {
+    if (!result) return
+    setEditingProperty(result.property)
+    setScreen('form')
   }
 
   async function handleRename(id: string, address: string) {
@@ -144,11 +152,19 @@ export default function App() {
         )}
 
         {screen === 'form' && (
-          <AnalysisForm onSubmit={handleAnalyze} isLoading={false} />
+          <AnalysisForm
+            onSubmit={handleAnalyze}
+            isLoading={false}
+            initialValues={editingProperty ?? undefined}
+          />
         )}
         {screen === 'loading' && <LoadingView />}
         {screen === 'results' && result && (
-          <ResultsView result={result} onBack={() => setScreen('form')} />
+          <ResultsView
+            result={result}
+            onBack={() => setScreen('form')}
+            onEdit={handleEdit}
+          />
         )}
         {screen === 'history' && (
           <HistoryView

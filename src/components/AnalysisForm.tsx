@@ -6,6 +6,7 @@ import { supabase } from '../lib/supabase'
 interface Props {
   onSubmit: (data: PropertyInput) => void
   isLoading: boolean
+  initialValues?: PropertyInput
 }
 
 const typologies: { value: Typology }[] = [
@@ -123,13 +124,14 @@ function useAddressAutocomplete(query: string) {
 }
 
 // ── Main component ───────────────────────────────────────────────────────────
-export default function AnalysisForm({ onSubmit, isLoading }: Props) {
+export default function AnalysisForm({ onSubmit, isLoading, initialValues }: Props) {
+  const isEditing = !!initialValues
   const [step, setStep] = useState(0)
-  const [form, setForm] = useState<PropertyInput>({
+  const [form, setForm] = useState<PropertyInput>(initialValues ?? {
     address: '', typology: 'T2', area: 0,
     askingPrice: 0, condition: 'renovation', renovationCost: 0, comments: '',
   })
-  const [addressInput, setAddressInput] = useState('')
+  const [addressInput, setAddressInput] = useState(initialValues?.address ?? '')
   const [showDropdown, setShowDropdown] = useState(false)
   const { results, loading } = useAddressAutocomplete(addressInput)
   const dropdownRef = useRef<HTMLDivElement>(null)
@@ -383,7 +385,9 @@ export default function AnalysisForm({ onSubmit, isLoading }: Props) {
             className="btn-primary flex-1 flex items-center justify-center gap-2 text-sm"
           >
             {step === 3 ? (
-              <><Search size={15} /> Analisar imóvel</>
+              isEditing
+                ? <><Search size={15} /> Re-analisar</>
+                : <><Search size={15} /> Analisar imóvel</>
             ) : (
               <>Continuar <ArrowRight size={15} /></>
             )}

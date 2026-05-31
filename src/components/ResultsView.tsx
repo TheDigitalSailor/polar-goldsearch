@@ -1,11 +1,12 @@
 import { useState, useMemo } from 'react'
-import { ArrowLeft, ExternalLink, TrendingDown, TrendingUp, Minus, Trophy, BarChart2, Calculator, Building2, MapPin, Info, Ruler, Clock, Home, AlertTriangle } from 'lucide-react'
+import { ArrowLeft, ExternalLink, TrendingDown, TrendingUp, Minus, Trophy, BarChart2, Calculator, Building2, MapPin, Info, Ruler, Clock, Home, AlertTriangle, ChevronDown } from 'lucide-react'
 import type { AnalysisResult, VerdictType, Valuation } from '../lib/types'
 import { formatCurrency, formatPercent } from '../lib/financial'
 
 interface Props {
   result: AnalysisResult
   onBack: () => void
+  onEdit: () => void
 }
 
 const verdictConfig: Record<VerdictType, {
@@ -18,7 +19,7 @@ const verdictConfig: Record<VerdictType, {
   pass:        { icon: '❌', label: 'Mau negócio',           textColor: 'text-red-700',     bg: 'bg-red-50',     border: 'border-red-200',     marginColor: 'text-red-600',     badgeBg: 'bg-red-100',     badgeText: 'text-red-800'     },
 }
 
-export default function ResultsView({ result, onBack }: Props) {
+export default function ResultsView({ result, onBack, onEdit }: Props) {
   const { property, comparables, marketStats, ineData, financial, verdict, aiAnalysis } = result
   const cfg = verdictConfig[verdict]
 
@@ -30,8 +31,12 @@ export default function ResultsView({ result, onBack }: Props) {
     maxPricePerSqm: Math.round(marketStats.max * 0.92),
   }
 
-  // ── Sale price slider state ───────────────────────────────────────────────
+  // ── Rationale tooltip state ───────────────────────────────────────────────
+  const [showRationale, setShowRationale] = useState(false)
+
+  // ── Sale price slider + custom verdict state ──────────────────────────────
   const [salePrice, setSalePrice] = useState(financial.estimatedSalePrice)
+  const [committedSalePrice, setCommittedSalePrice] = useState<number | null>(null)
   const minPrice = Math.round(financial.estimatedSalePrice * 0.55)
   const maxPrice = Math.round(financial.estimatedSalePrice * 1.55)
   const sliderPct = Math.min(100, Math.max(0,
@@ -63,6 +68,27 @@ export default function ResultsView({ result, onBack }: Props) {
              totalSaleCosts, netProfit, netMargin }
   }, [salePrice, financial])
 
+  // Derive verdict type from a net margin (mirrors edge function thresholds)
+  function marginToVerdict(m: number): VerdictType {
+    if (m >= 25) return 'excellent'
+    if (m >= 18) return 'investigate'
+    if (m >= 10) return 'grey_zone'
+    return 'pass'
+  }
+
+  // Committed sale price drives the verdict in the verdict card.
+  // null = use the original analysis verdict.
+  const customVerdict   = committedSalePrice !== null ? marginToVerdict(adj.netMargin) : null
+  const activeCfg       = customVerdict ? verdictConfig[customVerdict] : cfg
+  const salePriceDelta  = committedSalePrice !== null
+    ? ((committedSalePrice - financial.estimatedSalePrice) / financial.estimatedSalePrice) * 100
+    : 0
+
+  // Show the "Analisar" button when slider has moved more than 1% from estimate
+  // AND the current position hasn't been committed yet.
+  const sliderMoved = Math.abs(salePrice - financial.estimatedSalePrice) / financial.estimatedSalePrice > 0.01
+  const showCommitButton = sliderMoved && salePrice !== committedSalePrice
+
   const askingPricePerSqm = Math.round(property.askingPrice / property.area)
   const priceDiff = valuation.fairPricePerSqm > 0
     ? ((askingPricePerSqm - valuation.fairPricePerSqm) / valuation.fairPricePerSqm) * 100
@@ -78,19 +104,61 @@ export default function ResultsView({ result, onBack }: Props) {
   const isBelow = priceDiff < -5
   const isAbove = priceDiff > 5
 
-  const paragraphs = aiAnalysis.split(/\n+/).filter(Boolean)
+  // Try to parse aiAnalysis as structured JSON (new format).
+  // Old plain-text analyses fall back to the legacy segment renderer.
+  interface StructuredAnalysis {
+    resumo: string
+    contextoPricing: string
+    riscos: string[]
+    proximosPassos: string[]
+  }
+  let structuredAnalysis: StructuredAnalysis | null = null
+  try {
+    const parsed = JSON.parse(aiAnalysis)
+    if (parsed?.resumo && Array.isArray(parsed?.riscos)) {
+      structuredAnalysis = parsed as StructuredAnalysis
+    }
+  } catch { /* old format — use legacy renderer below */ }
+
+  // Legacy: parse plain-text into typed segments
+  // Detects both ALL-CAPS and Title Case section headers (Claude uses both styles).
+  const SENTENCE_STARTERS = /^(O |A |As |Os |Um |Uma |Após |Em |De |Da |Do |Para |Com |Sem |Por |Mas |Que |Se |No |Na |Ao |Já )/
+  const aiSegments = structuredAnalysis ? [] : aiAnalysis
+    .split(/\n+/)
+    .map(s => s.trim())
+    .filter(s => {
+      if (!s) return false
+      if (/^polar investimentos/i.test(s)) return false
+      if (s.includes('|') && /m²|€/.test(s) && s.length < 120) return false
+      return true
+    })
+    .map(text => {
+      const endsWithPunct = /[.!?,;:€)]$/.test(text)
+      const isAllCaps = text === text.toUpperCase() && /[A-ZÁÀÃÂÉÈÊÍÌÎÓÒÕÔÚÙÛÇ]/.test(text)
+      const isTitleCase = !endsWithPunct && text.length < 55 && text.split(' ').length <= 5
+        && /^[A-ZÁÀÃÂÉÈÊÍÌÎÓÒÕÔÚÙÛÇ]/.test(text) && !SENTENCE_STARTERS.test(text)
+      return { text, isHeader: isAllCaps || isTitleCase }
+    })
 
   return (
     <div className="max-w-3xl mx-auto px-4 sm:px-6 py-6 sm:py-10 space-y-8 sm:space-y-10">
 
       {/* ── Top bar ── */}
       <div>
-        <button
-          onClick={onBack}
-          className="flex items-center gap-1.5 text-sm text-polar-ink-muted hover:text-polar-ink transition-colors mb-4"
-        >
-          <ArrowLeft size={14} /> Nova análise
-        </button>
+        <div className="flex items-center justify-between mb-4">
+          <button
+            onClick={onBack}
+            className="flex items-center gap-1.5 text-sm text-polar-ink-muted hover:text-polar-ink transition-colors"
+          >
+            <ArrowLeft size={14} /> Nova análise
+          </button>
+          <button
+            onClick={onEdit}
+            className="flex items-center gap-1.5 text-sm text-polar-ink-muted hover:text-polar-ink border border-polar-line hover:border-polar-ink/30 px-2.5 py-1 rounded-lg transition-colors"
+          >
+            Editar detalhes
+          </button>
+        </div>
         <h2 className="text-lg sm:text-2xl font-semibold text-polar-ink leading-tight">
           {property.address}
         </h2>
@@ -175,18 +243,41 @@ export default function ResultsView({ result, onBack }: Props) {
             </div>
           </div>
 
-          {/* Bottom summary */}
-          <div className={`flex items-center gap-2 text-sm font-medium ${isBelow ? 'text-emerald-700' : isAbove ? 'text-red-600' : 'text-amber-600'}`}>
-            {isBelow ? <TrendingDown size={14}/> : isAbove ? <TrendingUp size={14}/> : <Minus size={14}/>}
-            <span>
-              Este imóvel está {Math.abs(priceDiff).toFixed(0)}%{' '}
-              {isBelow ? 'abaixo' : isAbove ? 'acima' : 'na'} da mediana
-            </span>
-            <span className="text-polar-ink-muted font-normal">· {comparables.length} comparáveis activos na zona</span>
+          {/* Bottom summary + rationale tooltip */}
+          <div>
+            <div className="flex items-center gap-2">
+              <span className={`flex items-center gap-1.5 text-sm font-semibold ${isBelow ? 'text-emerald-700' : isAbove ? 'text-red-600' : 'text-amber-600'}`}>
+                {isBelow ? <TrendingDown size={14}/> : isAbove ? <TrendingUp size={14}/> : <Minus size={14}/>}
+                Este imóvel está {Math.abs(priceDiff).toFixed(0)}%{' '}
+                {isBelow ? 'abaixo' : isAbove ? 'acima' : 'na'} da mediana
+              </span>
+              <span className="text-polar-ink-muted text-sm">· {comparables.length} comparáveis activos na zona</span>
+              {valuation.rationale && (
+                <button
+                  onClick={() => setShowRationale(v => !v)}
+                  className={`ml-auto flex items-center gap-1 text-xs font-medium px-2.5 py-1 rounded-lg border transition-colors ${
+                    showRationale
+                      ? 'bg-polar-purple/10 border-polar-purple/30 text-polar-purple'
+                      : 'bg-polar-bg border-polar-line text-polar-ink-muted hover:text-polar-ink hover:border-polar-ink/20'
+                  }`}
+                >
+                  <Info size={11}/>
+                  Como foi estimado?
+                  <ChevronDown size={11} className={`transition-transform duration-200 ${showRationale ? 'rotate-180' : ''}`}/>
+                </button>
+              )}
+            </div>
+
+            {/* Rationale expandable card */}
+            {valuation.rationale && showRationale && (
+              <div className="mt-3 rounded-xl border border-polar-purple/20 bg-polar-purple/5 p-4">
+                <div className="flex gap-2">
+                  <Info size={13} className="text-polar-purple flex-shrink-0 mt-0.5" />
+                  <p className="text-sm text-polar-ink/80 leading-relaxed">{valuation.rationale}</p>
+                </div>
+              </div>
+            )}
           </div>
-          {valuation.rationale && (
-            <p className="text-[10px] text-polar-ink-muted/50 mt-2 leading-relaxed">{valuation.rationale}</p>
-          )}
 
         </div>
       </section>
@@ -331,7 +422,7 @@ export default function ResultsView({ result, onBack }: Props) {
                 max={maxPrice}
                 step={5000}
                 value={salePrice}
-                onChange={e => setSalePrice(Number(e.target.value))}
+                onChange={e => { setSalePrice(Number(e.target.value)) }}
                 className="absolute inset-0 w-full opacity-0 cursor-pointer z-10"
               />
               {/* Custom thumb */}
@@ -347,6 +438,18 @@ export default function ResultsView({ result, onBack }: Props) {
               <span>ref. {formatCurrency(financial.estimatedSalePrice)}</span>
               <span>{formatCurrency(maxPrice)}</span>
             </div>
+
+            {/* Commit button — appears when slider has moved */}
+            {showCommitButton && (
+              <div className="mt-4 flex justify-center">
+                <button
+                  onClick={() => setCommittedSalePrice(salePrice)}
+                  className="flex items-center gap-2 text-sm font-medium text-polar-purple border border-polar-purple/30 bg-polar-purple/5 hover:bg-polar-purple/10 px-4 py-2 rounded-xl transition-colors"
+                >
+                  Analisar com este valor de venda →
+                </button>
+              </div>
+            )}
           </div>
 
           {/* Projeção de venda */}
@@ -402,29 +505,93 @@ export default function ResultsView({ result, onBack }: Props) {
       {/* ── 4. VEREDICTO ── */}
       <section id="verdict">
         <SectionLabel icon={<Trophy size={13}/>}>Veredicto</SectionLabel>
-        <div className={`rounded-xl border p-5 sm:p-7 ${cfg.bg} ${cfg.border}`}>
+        <div className={`rounded-xl border p-5 sm:p-7 ${activeCfg.bg} ${activeCfg.border}`}>
+
+          {/* Custom sale price note */}
+          {committedSalePrice !== null && (() => {
+            const isAboveEst = salePriceDelta > 0
+            const noteText = isAboveEst
+              ? `Vender a ${formatCurrency(committedSalePrice)} está ${Math.abs(salePriceDelta).toFixed(0)}% acima da estimativa de mercado. Valores acima da avaliação podem prolongar o tempo em mercado e exigir maior margem de negociação com compradores.`
+              : `Vender a ${formatCurrency(committedSalePrice)} está ${Math.abs(salePriceDelta).toFixed(0)}% abaixo da estimativa. Facilita a venda mais rápida mas comprime a margem disponível.`
+            return (
+              <div className="flex gap-2 rounded-lg border border-amber-200 bg-amber-50 p-3 mb-5">
+                <AlertTriangle size={13} className="text-amber-500 flex-shrink-0 mt-0.5" />
+                <p className="text-xs text-amber-800 leading-relaxed">{noteText}</p>
+              </div>
+            )
+          })()}
+
           {/* Header */}
           <div className="mb-5">
-            <div className={`inline-flex items-center gap-2.5 px-4 py-2.5 rounded-lg mb-3 ${cfg.badgeBg}`}>
-              <span className="text-xl leading-none">{cfg.icon}</span>
-              <span className={`text-lg font-bold tracking-wide ${cfg.badgeText}`}>{cfg.label}</span>
+            <div className={`inline-flex items-center gap-2.5 px-4 py-2.5 rounded-lg mb-3 ${activeCfg.badgeBg}`}>
+              <span className="text-xl leading-none">{activeCfg.icon}</span>
+              <span className={`text-lg font-bold tracking-wide ${activeCfg.badgeText}`}>{activeCfg.label}</span>
             </div>
             <div className="text-polar-ink-muted text-sm">
               Margem líquida:{' '}
-              <span className={`font-semibold ${cfg.marginColor}`}>
-                {formatPercent(financial.netMargin)}
+              <span className={`font-semibold ${activeCfg.marginColor}`}>
+                {formatPercent(committedSalePrice !== null ? adj.netMargin : financial.netMargin)}
               </span>
             </div>
           </div>
 
-          {/* AI analysis */}
-          <div className="space-y-3 border-t border-black/10 pt-5">
-            {paragraphs.map((p, i) => (
-              <p key={i} className="text-polar-ink/80 text-[15px] leading-relaxed">
-                {p}
-              </p>
-            ))}
-          </div>
+          {/* AI analysis — only shown for the original verdict (not custom sale price scenario) */}
+          {committedSalePrice === null && <div className="border-t border-black/10 pt-6">
+            {structuredAnalysis ? (
+              <div className="space-y-6">
+
+                {/* Summary — the verdict in plain language */}
+                <p className={`text-base sm:text-lg font-medium leading-relaxed ${cfg.textColor}`}>
+                  {structuredAnalysis.resumo}
+                </p>
+
+                {/* Price context */}
+                {structuredAnalysis.contextoPricing && (
+                  <p className="text-sm text-polar-ink/70 leading-relaxed border-l-2 border-black/10 pl-3">
+                    {structuredAnalysis.contextoPricing}
+                  </p>
+                )}
+
+                {/* Risks */}
+                {structuredAnalysis.riscos.length > 0 && (
+                  <div>
+                    <h4 className="text-[10px] font-bold uppercase tracking-widest text-polar-ink-muted mb-3">
+                      Riscos principais
+                    </h4>
+                    <ul className="space-y-2.5">
+                      {structuredAnalysis.riscos.map((risk, i) => (
+                        <li key={i} className="flex items-start gap-2.5">
+                          <AlertTriangle size={13} className="text-amber-500 flex-shrink-0 mt-0.5" />
+                          <span className="text-sm text-polar-ink/80 leading-relaxed">{risk}</span>
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+
+                {/* Next steps — highlighted callout */}
+                {structuredAnalysis.proximosPassos.length > 0 && (
+                  <div className={`rounded-xl border p-4 ${activeCfg.bg} ${activeCfg.border}`}>
+                    <h4 className={`text-[10px] font-bold uppercase tracking-widest mb-3 ${activeCfg.textColor} opacity-70`}>
+                      Próximos passos
+                    </h4>
+                    <ul className="space-y-2.5">
+                      {structuredAnalysis.proximosPassos.map((step, i) => (
+                        <li key={i} className="flex items-start gap-2.5">
+                          <span className={`text-sm font-bold flex-shrink-0 mt-0.5 ${activeCfg.textColor}`}>→</span>
+                          <span className="text-sm font-medium text-polar-ink leading-relaxed">{step}</span>
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+
+              </div>
+            ) : (
+              /* Legacy plain-text renderer — groups into sections, splits risks into bullets */
+              <LegacyAnalysis segments={aiSegments} cfg={cfg} />
+            )}
+          </div>}
         </div>
       </section>
 
@@ -539,6 +706,109 @@ function ColLabel({ children }: { children: React.ReactNode }) {
   )
 }
 
+
+/** Splits a prose paragraph into individual sentence bullets (≥ 40 chars each). */
+function splitSentences(text: string): string[] {
+  return text
+    .split(/(?<=\.)\s+/)
+    .map(s => s.replace(/\.$/, '').trim())
+    .filter(s => s.length >= 40)
+}
+
+const RISKS_RE    = /risco|riscos/i
+const RECOM_RE    = /recomend|próximos|passos|conclus/i
+const CONTEXT_RE  = /posicion|financ|mercado|consider/i
+
+function LegacyAnalysis({
+  segments,
+  cfg,
+}: {
+  segments: { text: string; isHeader: boolean }[]
+  cfg: { textColor: string; bg: string; border: string }
+}) {
+  // Group into sections: { header, paragraphs[] }
+  type Section = { header: string | null; paragraphs: string[] }
+  const sections: Section[] = []
+  let cur: Section = { header: null, paragraphs: [] }
+  for (const seg of segments) {
+    if (seg.isHeader) {
+      if (cur.paragraphs.length || cur.header) sections.push(cur)
+      cur = { header: seg.text, paragraphs: [] }
+    } else {
+      cur.paragraphs.push(seg.text)
+    }
+  }
+  if (cur.paragraphs.length || cur.header) sections.push(cur)
+
+  return (
+    <div className="space-y-6">
+      {sections.map((sec, i) => {
+        const h = sec.header ?? ''
+        const isRisks   = RISKS_RE.test(h)
+        const isRecom   = RECOM_RE.test(h)
+        const isContext = !isRisks && !isRecom && CONTEXT_RE.test(h)
+
+        if (isRisks) {
+          const bullets = sec.paragraphs.flatMap(p => splitSentences(p))
+          return (
+            <div key={i}>
+              <h4 className="text-[10px] font-bold uppercase tracking-widest text-polar-ink-muted mb-3">
+                {h}
+              </h4>
+              <ul className="space-y-2.5">
+                {bullets.map((b, j) => (
+                  <li key={j} className="flex items-start gap-2.5">
+                    <AlertTriangle size={13} className="text-amber-500 flex-shrink-0 mt-0.5" />
+                    <span className="text-sm text-polar-ink/80 leading-relaxed">{b}</span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )
+        }
+
+        if (isRecom) {
+          const bullets = sec.paragraphs.flatMap(p => splitSentences(p))
+          return (
+            <div key={i} className={`rounded-xl border p-4 ${cfg.bg} ${cfg.border}`}>
+              <h4 className={`text-[10px] font-bold uppercase tracking-widest mb-3 ${cfg.textColor} opacity-70`}>
+                {h}
+              </h4>
+              <ul className="space-y-2.5">
+                {bullets.map((b, j) => (
+                  <li key={j} className="flex items-start gap-2.5">
+                    <span className={`text-sm font-bold flex-shrink-0 mt-0.5 ${cfg.textColor}`}>→</span>
+                    <span className="text-sm font-medium text-polar-ink leading-relaxed">{b}</span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )
+        }
+
+        // First section (no header) or context sections → paragraph
+        return (
+          <div key={i}>
+            {h && (
+              <h4 className={`text-[10px] font-bold uppercase tracking-widest mb-2 ${
+                isContext ? 'text-polar-ink-muted' : `${cfg.textColor} opacity-70`
+              }`}>
+                {h}
+              </h4>
+            )}
+            {sec.paragraphs.map((p, j) => (
+              <p key={j} className={`text-sm leading-relaxed text-polar-ink/80 ${j > 0 ? 'mt-3' : ''} ${
+                i === 0 && !h ? `text-base font-medium ${cfg.textColor}` : ''
+              }`}>
+                {p}
+              </p>
+            ))}
+          </div>
+        )
+      })}
+    </div>
+  )
+}
 
 function SignalCard({ label, value, valueColor, badge, description, footnote }: {
   label: string

@@ -1006,23 +1006,19 @@ async function generateAnalysis(
     : ''
 
   const ineSection = ineData
-    ? `\nREFERÊNCIA INE — mediana nacional de transações reais (${ineData.period}): ${ineData.medianPricePerSqm.toLocaleString('pt-PT')} €/m²${
+    ? `\nREFERÊNCIA INE — mediana de transações reais (${ineData.period}, ${ineData.region}): ${ineData.medianPricePerSqm.toLocaleString('pt-PT')} €/m²${
         ineData.priceChangePct !== null
           ? ` (${ineData.priceChangePct > 0 ? '+' : ''}${ineData.priceChangePct.toFixed(1)}% vs. ano anterior)`
           : ''
-      }. ATENÇÃO: este valor é a mediana nacional incluindo zonas rurais — em mercados urbanos os preços reais são tipicamente mais altos.`
+      }.`
     : ''
 
   const comparablesSection = marketStats.count > 0
     ? `\nMERCADO LOCAL — Imovirtual (${marketStats.count} anúncios activos, tipologias próximas):
-- Mediana PEDIDA por m²: ${marketStats.medianPricePerSqm.toFixed(0)} €/m² (intervalo pedido ${marketStats.min.toFixed(0)} – ${marketStats.max.toFixed(0)} €/m²)`
+- Mediana PEDIDA: ${marketStats.medianPricePerSqm.toFixed(0)} €/m² (intervalo ${marketStats.min.toFixed(0)} – ${marketStats.max.toFixed(0)} €/m²)`
     : '\nMERCADO LOCAL: Sem comparáveis activos disponíveis.'
 
-  const valuationSection = `\nAVALIAÇÃO DE TRANSAÇÃO (valor realista de venda, já descontado do gap pedido→transação):
-- Valor justo estimado: ${valuation.fairPricePerSqm.toLocaleString('pt-PT')} €/m² (intervalo ${valuation.minPricePerSqm.toLocaleString('pt-PT')} – ${valuation.maxPricePerSqm.toLocaleString('pt-PT')} €/m²)
-- Esta é a base de pricing — usa-a (não os preços pedidos) ao avaliar o posicionamento.`
-
-  const prompt = `És um analista de investimento imobiliário sénior a trabalhar para a Polar Investimentos. Analisa este imóvel e fornece um veredicto fundamentado.
+  const prompt = `És um analista de investimento imobiliário sénior a trabalhar para a Polar Investimentos. Analisa este imóvel e chama a ferramenta submeter_analise.
 
 IMÓVEL:
 - Morada: ${property.address}
@@ -1032,32 +1028,68 @@ IMÓVEL:
 - Estimativa de obras: ${(property.renovationCost as number).toLocaleString('pt-PT')} €${userNotesSection}
 ${ineSection}
 ${comparablesSection}
-${valuationSection}
+
+AVALIAÇÃO DE TRANSAÇÃO (valor realista de venda, já descontado do gap pedido→transação):
+- Valor justo estimado: ${valuation.fairPricePerSqm.toLocaleString('pt-PT')} €/m² (intervalo ${valuation.minPricePerSqm.toLocaleString('pt-PT')} – ${valuation.maxPricePerSqm.toLocaleString('pt-PT')} €/m²)
 
 ANÁLISE FINANCEIRA:
-- Investimento total: ${financial.totalAcquisitionCost.toLocaleString('pt-PT')} € (inclui IMT ${financial.imt.toLocaleString('pt-PT')} €)
-- Preço estimado de venda (pós-obra): ${financial.estimatedSalePrice.toLocaleString('pt-PT')} €
-- Lucro líquido estimado: ${financial.netProfit.toLocaleString('pt-PT')} €
+- Investimento total: ${financial.totalAcquisitionCost.toLocaleString('pt-PT')} €
+- Preço de venda estimado: ${financial.estimatedSalePrice.toLocaleString('pt-PT')} €
+- Lucro líquido: ${financial.netProfit.toLocaleString('pt-PT')} €
 - Margem líquida: ${financial.netMargin.toFixed(1)}%
+- Veredicto automático: ${verdict}
 
-VEREDICTO AUTOMÁTICO: ${verdict}
-
-Escreve uma análise de 3-4 parágrafos curtos que:
-1. Avalie o posicionamento de preço face ao mercado local (Imovirtual) e à referência nacional INE
-2. Comente os riscos principais (obras, localização, liquidez)
-3. Dê uma recomendação clara e directa com o que fazer a seguir
-4. Se existirem notas do utilizador, incorpora as informações relevantes
-
-IMPORTANTE: Responde em português de Portugal. Não uses markdown — sem #, ##, *, **, _, listas com traço, etc. Apenas texto corrido em parágrafos separados por linha vazia.`
+Responde em português de Portugal. Sê directo e específico — evita generalidades.`
 
   const message = await client.messages.create({
     model: 'claude-sonnet-4-6',
     max_tokens: 1024,
+    tools: [{
+      name: 'submeter_analise',
+      description: 'Submete a análise estruturada do imóvel.',
+      input_schema: {
+        type: 'object',
+        properties: {
+          resumo: {
+            type: 'string',
+            description: '1–2 frases directas com o veredicto central. Ex: "A margem de 8% não cobre o risco desta operação nas condições actuais. Para ser viável, o preço de compra teria de baixar para 220 000 €."',
+          },
+          contextoPricing: {
+            type: 'string',
+            description: '2–3 frases sobre o posicionamento de preço face ao mercado local e INE. Inclui números concretos.',
+          },
+          riscos: {
+            type: 'array',
+            items: { type: 'string' },
+            description: '2–4 riscos concretos e específicos a este negócio. Cada item é uma frase curta. Ex: "Obras de canalização têm histórico de derrapagem — orçamento de 20 000 € pode ser conservador."',
+          },
+          proximosPassos: {
+            type: 'array',
+            items: { type: 'string' },
+            description: '2–3 acções concretas e imediatas para o investidor. Cada item é uma frase curta com verbo de acção. Ex: "Negociar redução para 230 000 € antes de avançar com qualquer due diligence."',
+          },
+        },
+        required: ['resumo', 'contextoPricing', 'riscos', 'proximosPassos'],
+      },
+    }],
+    tool_choice: { type: 'tool', name: 'submeter_analise' },
     messages: [{ role: 'user', content: prompt }],
   })
 
-  const content = message.content[0]
-  return content.type === 'text' ? content.text : ''
+  // deno-lint-ignore no-explicit-any
+  const toolUse = message.content.find((c: any) => c.type === 'tool_use')
+  // deno-lint-ignore no-explicit-any
+  const input = (toolUse as any)?.input
+  if (!input) return ''
+
+  // Return as JSON string — the frontend detects this and renders structured UI.
+  // Old plain-text analyses in the DB are handled by a fallback text renderer.
+  return JSON.stringify({
+    resumo: input.resumo ?? '',
+    contextoPricing: input.contextoPricing ?? '',
+    riscos: Array.isArray(input.riscos) ? input.riscos : [],
+    proximosPassos: Array.isArray(input.proximosPassos) ? input.proximosPassos : [],
+  })
 }
 
 // ─── Main handler ─────────────────────────────────────────────────────────────
