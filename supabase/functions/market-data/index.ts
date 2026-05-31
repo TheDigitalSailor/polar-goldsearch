@@ -1,4 +1,5 @@
 import { serve } from 'https://deno.land/std@0.208.0/http/server.ts'
+import { recentQuarters, categoryValue } from '../_shared/ine.ts'
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -9,17 +10,9 @@ const corsHeaders = {
 const INE_BASE = 'https://www.ine.pt/ine/json_indicador/pindica.jsp'
 const INDICATOR = '0012234'
 
-// Last 8 quarters for trend chart
-const QUARTERS = [
-  { code: 'S5A20241', label: 'Q1 2024' },
-  { code: 'S5A20242', label: 'Q2 2024' },
-  { code: 'S5A20243', label: 'Q3 2024' },
-  { code: 'S5A20244', label: 'Q4 2024' },
-  { code: 'S5A20251', label: 'Q1 2025' },
-  { code: 'S5A20252', label: 'Q2 2025' },
-  { code: 'S5A20253', label: 'Q3 2025' },
-  { code: 'S5A20254', label: 'Q4 2025' },
-]
+// 8 most-recent published quarters, oldest → newest (for the trend chart).
+// Computed dynamically so the window never goes stale as new quarters publish.
+const QUARTERS = recentQuarters(8).reverse()
 
 // Regions to surface in the dashboard — using confirmed alphanumeric INE codes
 // discovered via bulk fetch (no Dim2). Ordered for display.
@@ -77,12 +70,11 @@ const DASHBOARD_REGIONS = [
 
 // deno-lint-ignore no-explicit-any
 function extractValues(entries: any[]): { total: number; novos: number; existentes: number } {
-  const get = (t: string) => {
-    const e = entries.find((x: any) => x?.dim_3_t === t)
-    const v = parseFloat(e?.valor ?? '0')
-    return Number.isFinite(v) && v > 0 ? Math.round(v) : 0
+  return {
+    total: categoryValue(entries, 'Total'),
+    novos: categoryValue(entries, 'Novos'),
+    existentes: categoryValue(entries, 'Existentes'),
   }
-  return { total: get('Total'), novos: get('Novos'), existentes: get('Existentes') }
 }
 
 /**
@@ -128,15 +120,21 @@ serve(async (req) => {
 
   try {
     const latestQuarter = QUARTERS[QUARTERS.length - 1]
-    const prevYearQuarter = QUARTERS[QUARTERS.length - 5] // Q4 2024
+    const prevYearQuarter =
+      QUARTERS.find(q => q.year === latestQuarter.year - 1 && q.quarter === latestQuarter.quarter)
+      ?? QUARTERS[Math.max(0, QUARTERS.length - 5)]
 
-    console.log('Fetching bulk INE data for', latestQuarter.code, 'and', prevYearQuarter.code)
+    // 1. Fetch every quarter once (parallel batches of 4) and reuse the maps for
+    // both the regional snapshot and the trend series — no quarter fetched twice.
+    const quarterMaps = new Map<string, Awaited<ReturnType<typeof fetchBulkQuarter>>>()
+    for (let i = 0; i < QUARTERS.length; i += 4) {
+      const batch = QUARTERS.slice(i, i + 4)
+      const maps = await Promise.all(batch.map(q => fetchBulkQuarter(q.code)))
+      batch.forEach((q, j) => quarterMaps.set(q.code, maps[j]))
+    }
 
-    // 1. Bulk fetch latest + prev year in parallel for YoY
-    const [latestMap, prevMap] = await Promise.all([
-      fetchBulkQuarter(latestQuarter.code),
-      fetchBulkQuarter(prevYearQuarter.code),
-    ])
+    const latestMap = quarterMaps.get(latestQuarter.code) ?? new Map()
+    const prevMap = quarterMaps.get(prevYearQuarter.code) ?? new Map()
 
     // 2. Build region data from bulk maps
     const regions = DASHBOARD_REGIONS.map(r => {
@@ -161,24 +159,20 @@ serve(async (req) => {
     }).filter(r => r.median > 0)
       .sort((a, b) => b.median - a.median)
 
-    // 3. Trend — bulk fetch each quarter (in parallel batches of 4)
+    // 3. Trend — reuse the already-fetched quarter maps (national 'PT' series)
     const trendData: Array<{ quarter: string; code: string; median: number; medianNew: number; medianExisting: number }> = []
 
-    for (let i = 0; i < QUARTERS.length; i += 4) {
-      const batch = QUARTERS.slice(i, i + 4)
-      const maps = await Promise.all(batch.map(q => fetchBulkQuarter(q.code)))
-      for (let j = 0; j < batch.length; j++) {
-        const entries = maps[j].get('PT') ?? []
-        const vals = extractValues(entries)
-        if (vals.total > 0) {
-          trendData.push({
-            quarter: batch[j].label,
-            code: batch[j].code,
-            median: vals.total,
-            medianNew: vals.novos,
-            medianExisting: vals.existentes,
-          })
-        }
+    for (const q of QUARTERS) {
+      const entries = quarterMaps.get(q.code)?.get('PT') ?? []
+      const vals = extractValues(entries)
+      if (vals.total > 0) {
+        trendData.push({
+          quarter: q.label,
+          code: q.code,
+          median: vals.total,
+          medianNew: vals.novos,
+          medianExisting: vals.existentes,
+        })
       }
     }
 

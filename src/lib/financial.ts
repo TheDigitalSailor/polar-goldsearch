@@ -40,7 +40,6 @@ export function calculateFinancials(
   const grossProfit = estimatedSalePrice - purchasePrice - renovationCost
   const netProfit = estimatedSalePrice - totalAcquisitionCost - totalSaleCosts
   const netMargin = (netProfit / totalAcquisitionCost) * 100
-  const roi = (netProfit / totalAcquisitionCost) * 100
 
   return {
     purchasePrice,
@@ -58,7 +57,6 @@ export function calculateFinancials(
     grossProfit,
     netProfit,
     netMargin,
-    roi,
   }
 }
 

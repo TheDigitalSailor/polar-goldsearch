@@ -26,10 +26,7 @@ export interface Comparable {
 export interface MarketStats {
   min: number
   max: number
-  median: number
-  average: number
   medianPricePerSqm: number
-  averagePricePerSqm: number
   count: number
 }
 
@@ -66,7 +63,6 @@ export interface FinancialBreakdown {
   grossProfit: number
   netProfit: number
   netMargin: number
-  roi: number
 }
 
 export interface INEMarketData {

@@ -20,10 +20,7 @@ export const MOCK_RESULT: AnalysisResult = {
   marketStats: {
     min: 2800,
     max: 3803,
-    median: 258500,
-    average: 264500,
     medianPricePerSqm: 3290,
-    averagePricePerSqm: 3373,
     count: 6,
   },
   valuation: {
@@ -48,7 +45,6 @@ export const MOCK_RESULT: AnalysisResult = {
     grossProfit: 31620,
     netProfit: -2569,
     netMargin: -1.1,
-    roi: -1.1,
   },
   ineData: {
     medianPricePerSqm: 3150,

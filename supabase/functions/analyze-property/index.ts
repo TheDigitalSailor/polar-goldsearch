@@ -1,13 +1,22 @@
 import { serve } from 'https://deno.land/std@0.208.0/http/server.ts'
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 import Anthropic from 'https://esm.sh/@anthropic-ai/sdk@0.39.0'
+import { recentQuarters, categoryValue } from '../_shared/ine.ts'
 
 const allowedOrigin = Deno.env.get('ALLOWED_ORIGIN') ?? '*'
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': allowedOrigin,
-  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type, x-function-secret',
+  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
   'Access-Control-Allow-Methods': 'POST, OPTIONS',
+}
+
+// Property condition → human label, shared by the valuation and analysis prompts.
+const CONDITION_LABELS: Record<string, string> = {
+  bad: 'Mau estado (obras estruturais)',
+  renovation: 'Remodelação necessária',
+  good: 'Bom estado',
+  renovated: 'Remodelado',
 }
 
 // ─── Financial logic ─────────────────────────────────────────────────────────
@@ -45,7 +54,7 @@ function calculateFinancials(
   return {
     purchasePrice, imt, stampDuty, notaryFees, renovationCost, totalAcquisitionCost,
     estimatedSalePrice, agencyCommission, agencyVAT, capitalGainsTax, energyCertificate,
-    totalSaleCosts, grossProfit, netProfit, netMargin, roi: netMargin,
+    totalSaleCosts, grossProfit, netProfit, netMargin,
   }
 }
 
@@ -75,52 +84,6 @@ interface INEMarketData {
   period: string
   region: string
 }
-
-// ─── NUTS II map for INE API ──────────────────────────────────────────────────
-// Maps Portuguese city/area names → NUTS-2024 region codes used by INE's API
-const INE_NUTS_MAP: Array<{ code: string; region: string; names: string[] }> = [
-  {
-    code: 'PT17', region: 'A.M. de Lisboa',
-    names: ['lisboa', 'lisbon', 'loures', 'sintra', 'cascais', 'oeiras', 'amadora', 'odivelas',
-      'mafra', 'torres vedras', 'vila franca de xira', 'alenquer', 'azambuja', 'lourinha',
-      'almada', 'seixal', 'barreiro', 'montijo', 'alcochete', 'sesimbra', 'palmela',
-      'moita', 'setubal', 'setúbal', 'costa da caparica', 'caparica', 'sobral'],
-  },
-  {
-    code: 'PT15', region: 'Algarve',
-    names: ['faro', 'albufeira', 'portimao', 'portimão', 'lagos', 'silves', 'loule', 'loulé',
-      'tavira', 'olhao', 'olhão', 'vila real de santo antonio', 'algarve', 'lagoa',
-      'monchique', 'aljezur', 'alcoutim', 'castro marim', 'sao bras de alportel'],
-  },
-  {
-    code: 'PT11', region: 'Norte',
-    names: ['porto', 'oporto', 'gaia', 'vila nova de gaia', 'matosinhos', 'maia', 'gondomar',
-      'valongo', 'braga', 'guimaraes', 'guimarães', 'barcelos', 'famalicao', 'famalicão',
-      'povoa de varzim', 'espinho', 'vila do conde', 'amarante', 'felgueiras', 'paredes',
-      'penafiel', 'viana do castelo', 'chaves', 'braganca', 'bragança', 'vila real', 'mirandela'],
-  },
-  {
-    code: 'PT16', region: 'Centro',
-    names: ['coimbra', 'leiria', 'marinha grande', 'aveiro', 'ilhavo', 'ilhavo', 'figueira da foz',
-      'agueda', 'viseu', 'lamego', 'castelo branco', 'covilha', 'covilhã', 'guarda',
-      'nazare', 'alcobaca', 'batalha', 'caldas da rainha', 'obidos', 'peniche',
-      'tomar', 'abrantes', 'torres novas', 'fundao', 'seia', 'gouveia'],
-  },
-  {
-    code: 'PT18', region: 'Alentejo',
-    names: ['evora', 'évora', 'beja', 'portalegre', 'moura', 'serpa', 'elvas',
-      'campo maior', 'estremoz', 'borba', 'redondo', 'arraiolos', 'montemor o novo',
-      'vendas novas', 'grandola', 'grândola', 'santiago do cacem', 'sines', 'comporta', 'troia'],
-  },
-  {
-    code: 'PT20', region: 'Açores',
-    names: ['acores', 'açores', 'azores', 'ponta delgada', 'angra', 'horta', 'terceira', 'sao miguel', 'faial'],
-  },
-  {
-    code: 'PT30', region: 'Madeira',
-    names: ['madeira', 'funchal', 'canico', 'camara de lobos', 'machico', 'porto santo'],
-  },
-]
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -535,18 +498,6 @@ function resolveImovirtualPath(address: string): string {
   return directSlug
 }
 
-/** Map city name to INE NUTS II code + human label */
-function resolveNUTSCode(cityPart: string): { code: string; region: string } {
-  const key = normalise(cityPart)
-  for (const entry of INE_NUTS_MAP) {
-    if (entry.names.some((n) => key.includes(normalise(n)) || normalise(n).includes(key))) {
-      return { code: entry.code, region: entry.region }
-    }
-  }
-  console.warn(`No NUTS code found for "${cityPart}", defaulting to national (PT)`)
-  return { code: 'PT', region: 'Portugal' }
-}
-
 /** Extract city-level part from a full address string */
 function extractCity(address: string): string {
   const parts = address.split(',').map((s) => s.trim()).filter(Boolean)
@@ -585,7 +536,6 @@ const IMOV_HEADERS = {
 async function fetchImovirtualListings(
   address: string,
   typology: string,
-  _area: number
 ): Promise<Comparable[]> {
   const cityPart = extractCity(address)  // used for location label in comparables
 
@@ -724,36 +674,21 @@ async function fetchImovirtualListings(
 // Regional NUTS-2024 codes differ from NUTS-2013 and require separate discovery;
 // for now we use PT (national) which always works and is still very useful.
 
-/** Parse the INE Dados structure which can be either an array or an object
- *  keyed by period label (e.g. "4.º Trimestre de 2025": [...]).
- *  Returns the "Total" category value, or the first numeric value found.
- */
+/** Parse the INE Dados structure (array, or object keyed by period label like
+ *  "4.º Trimestre de 2025": [...]) and return the "Total" category value. */
 // deno-lint-ignore no-explicit-any
 function extractINEValue(response: any): number {
   const dados = response?.[0]?.Dados
   if (!dados) return 0
 
   // deno-lint-ignore no-explicit-any
-  let entries: any[]
-  if (Array.isArray(dados)) {
-    entries = dados
-  } else if (typeof dados === 'object') {
-    // Object keyed by period label: {"4.º Trimestre de 2025": [...]}
-    const firstKey = Object.keys(dados)[0]
-    entries = Array.isArray(dados[firstKey]) ? dados[firstKey] : []
-  } else {
-    return 0
-  }
+  const entries: any[] = Array.isArray(dados)
+    ? dados
+    : typeof dados === 'object'
+      ? (Array.isArray(dados[Object.keys(dados)[0]]) ? dados[Object.keys(dados)[0]] : [])
+      : []
 
-  // Prefer the "Total" category entry; fall back to the first entry
-  // deno-lint-ignore no-explicit-any
-  const total = entries.find((e: any) =>
-    String(e?.categ_Dim3 ?? '').toLowerCase().includes('total') ||
-    String(e?.categ ?? '').toLowerCase().includes('total')
-  ) ?? entries[0]
-
-  const val = parseFloat(total?.valor ?? '0')
-  return Number.isFinite(val) && val > 0 ? Math.round(val) : 0
+  return categoryValue(entries, 'Total', true)
 }
 
 // Municipality-level INE codes (alphanumeric, discovered via bulk API fetch May 2025)
@@ -814,93 +749,64 @@ const INE_MUNIC: Record<string, [string, string]> = {
   'coimbra':     ['192', 'Regiao de Coimbra'],
 }
 
-async function fetchINEMarketData(address: string): Promise<INEMarketData | null> {
-  const cityPart = extractCity(address)
+const INE_BASE = 'https://www.ine.pt/ine/json_indicador/pindica.jsp?op=2&varcd=0012234'
+const INE_FETCH_HEADERS = { Accept: 'application/json, text/plain, */*' }
 
+async function fetchINEValue(quarterCode: string, geo: string, timeoutMs: number): Promise<number> {
+  const url = `${INE_BASE}&Dim1=${quarterCode}&Dim2=${geo}&lang=PT`
+  const res = await fetch(url, { headers: INE_FETCH_HEADERS, signal: AbortSignal.timeout(timeoutMs) })
+  if (!res.ok) {
+    console.warn(`INE HTTP ${res.status} (${geo}/${quarterCode})`)
+    return 0
+  }
+  return extractINEValue(await res.json())
+}
+
+async function fetchINEMarketData(address: string): Promise<INEMarketData | null> {
   // Resolve the most specific INE code: scan all address parts, pick longest keyword match
   let geoCode = 'PT'
-  let geoRegion = 'Portugal'
+  let matchedRegion = 'Portugal'
   let bestLen = 0
   const parts = address.split(',').map((s) => normalise(s.trim()))
   for (const part of parts) {
     for (const kw of Object.keys(INE_MUNIC)) {
       if ((part === kw || part.includes(kw) || kw.includes(part)) && kw.length > bestLen) {
         geoCode = INE_MUNIC[kw][0]
-        geoRegion = INE_MUNIC[kw][1]
+        matchedRegion = INE_MUNIC[kw][1]
         bestLen = kw.length
       }
     }
   }
-  // Fall back to resolveNUTSCode region label for display (even if we use PT geo code)
-  const { region: nutsRegion } = resolveNUTSCode(cityPart)
-  const region = bestLen > 0 ? geoRegion : nutsRegion
 
-  console.log(`INE lookup: "${address}" -> geoCode=${geoCode} region=${region}`)
+  console.log(`INE lookup: "${address}" -> geoCode=${geoCode} region=${matchedRegion}`)
 
-  // Try most-recent quarters first (INE publishes ~3 months after quarter end)
-  // If municipality code fails, fall back to national PT (always works)
+  // Most-recent published quarters first; if the municipality code has no data,
+  // fall back to national PT (always available).
   const geoCandidates = geoCode !== 'PT' ? [geoCode, 'PT'] : ['PT']
-  const quarters = ['S5A20254', 'S5A20253', 'S5A20252', 'S5A20244']
+  const quarters = recentQuarters(4)
 
-  for (const quarter of quarters) {
+  for (const q of quarters) {
     for (const geo of geoCandidates) {
-    try {
-      const url =
-        `https://www.ine.pt/ine/json_indicador/pindica.jsp?op=2&varcd=0012234` +
-        `&Dim1=${quarter}&Dim2=${geo}&lang=PT`
-      console.log(`INE fetch: ${url}`)
-
-      const res = await fetch(url, {
-        headers: { Accept: 'application/json, text/plain, */*' },
-        signal: AbortSignal.timeout(12000),
-      })
-      if (!res.ok) {
-        console.warn(`INE HTTP ${res.status}`)
-        continue
-      }
-
-      const data = await res.json()
-      console.log('INE raw response snippet:', JSON.stringify(data).slice(0, 300))
-
-      const medianPricePerSqm = extractINEValue(data)
-      if (medianPricePerSqm <= 0) {
-        console.warn(`INE: no valid value for ${quarter}`)
-        continue
-      }
-
-      console.log(`INE: medianPricePerSqm=${medianPricePerSqm} (${quarter})`)
-
-      // YoY trend — same quarter one year prior
-      let priceChangePct: number | null = null
       try {
-        const yMatch = quarter.match(/S5A(\d{4})(\d)/)
-        if (yMatch) {
-          const prevQuarter = `S5A${parseInt(yMatch[1]) - 1}${yMatch[2]}`
-          const prevUrl =
-            `https://www.ine.pt/ine/json_indicador/pindica.jsp?op=2&varcd=0012234` +
-            `&Dim1=${prevQuarter}&Dim2=${geoCode}&lang=PT`
-          const prevRes = await fetch(prevUrl, {
-            headers: { Accept: 'application/json, text/plain, */*' },
-            signal: AbortSignal.timeout(8000),
-          })
-          if (prevRes.ok) {
-            const prevVal = extractINEValue(await prevRes.json())
-            if (prevVal > 0) {
-              priceChangePct = ((medianPricePerSqm - prevVal) / prevVal) * 100
-            }
-          }
-        }
-      } catch { /* trend is optional */ }
+        const medianPricePerSqm = await fetchINEValue(q.code, geo, 12000)
+        if (medianPricePerSqm <= 0) continue
 
-      const qMatch = quarter.match(/S5A(\d{4})(\d)/)
-      const period = qMatch ? `Q${qMatch[2]} ${qMatch[1]}` : quarter
-      // Use the actual region for the geo code we succeeded with
-      const finalRegion = geo === 'PT' ? (bestLen > 0 ? region : 'Portugal') : region
-      return { medianPricePerSqm, priceChangePct, period, region: finalRegion }
-    } catch (err) {
-      console.warn(`INE error (${geo}/${quarter}):`, err)
+        console.log(`INE: medianPricePerSqm=${medianPricePerSqm} (${q.label}, ${geo})`)
+
+        // YoY trend — same quarter one year prior, on the SAME geography we succeeded with
+        let priceChangePct: number | null = null
+        try {
+          const prevVal = await fetchINEValue(`S5A${q.year - 1}${q.quarter}`, geo, 8000)
+          if (prevVal > 0) priceChangePct = ((medianPricePerSqm - prevVal) / prevVal) * 100
+        } catch { /* trend is optional */ }
+
+        // National data must never be labelled with a local region name.
+        const region = geo === 'PT' ? 'Portugal' : matchedRegion
+        return { medianPricePerSqm, priceChangePct, period: q.label, region }
+      } catch (err) {
+        console.warn(`INE error (${geo}/${q.code}):`, err)
+      }
     }
-    } // end geoCandidates loop
   }
 
   console.warn('INE: all attempts failed — returning null')
@@ -918,17 +824,13 @@ function calcMedian(values: number[]): number {
     : (sorted[mid - 1] + sorted[mid]) / 2
 }
 
-function calcMarketStats(comparables: Comparable[], _area: number) {
-  const prices = comparables.map((c) => c.price)
+function calcMarketStats(comparables: Comparable[]) {
   const ppsm = comparables.map((c) => c.pricePerSqm).filter((v) => v > 0)
 
   return {
     min: Math.min(...(ppsm.length ? ppsm : [0])),
     max: Math.max(...(ppsm.length ? ppsm : [0])),
-    median: calcMedian(prices),
-    average: prices.length ? prices.reduce((a, b) => a + b, 0) / prices.length : 0,
     medianPricePerSqm: calcMedian(ppsm),
-    averagePricePerSqm: ppsm.length ? ppsm.reduce((a, b) => a + b, 0) / ppsm.length : 0,
     count: comparables.length,
   }
 }
@@ -953,13 +855,6 @@ async function estimateValuation(
   ineData: INEMarketData | null,
   anthropicKey: string,
 ): Promise<Valuation | null> {
-  const conditionLabels: Record<string, string> = {
-    bad: 'Mau estado (obras estruturais)',
-    renovation: 'Remodelação necessária',
-    good: 'Bom estado',
-    renovated: 'Remodelado',
-  }
-
   const askingPpsm = Math.round((property.askingPrice as number) / (property.area as number))
 
   const localSection = marketStats.count > 0
@@ -982,7 +877,7 @@ async function estimateValuation(
 IMÓVEL:
 - Morada: ${property.address}
 - Tipologia: ${property.typology}, ${property.area} m²
-- Condição: ${conditionLabels[property.condition as string] ?? property.condition}
+- Condição: ${CONDITION_LABELS[property.condition as string] ?? property.condition}
 - Preço pedido deste imóvel: ${askingPpsm} €/m²
 
 ${localSection}
@@ -1105,13 +1000,6 @@ async function generateAnalysis(
 ): Promise<string> {
   const client = new Anthropic({ apiKey: anthropicKey })
 
-  const conditionLabels: Record<string, string> = {
-    bad: 'Mau estado (obras estruturais)',
-    renovation: 'Remodelação necessária',
-    good: 'Bom estado',
-    renovated: 'Remodelado',
-  }
-
   const userNotes = (property.comments as string | undefined)?.trim()
   const userNotesSection = userNotes
     ? `\nNOTAS DO UTILIZADOR:\n<user_notes>\n${userNotes}\n</user_notes>`
@@ -1140,7 +1028,7 @@ IMÓVEL:
 - Morada: ${property.address}
 - Tipologia: ${property.typology}, ${property.area} m²
 - Preço pedido: ${(property.askingPrice as number).toLocaleString('pt-PT')} €
-- Condição: ${conditionLabels[property.condition as string] ?? property.condition}
+- Condição: ${CONDITION_LABELS[property.condition as string] ?? property.condition}
 - Estimativa de obras: ${(property.renovationCost as number).toLocaleString('pt-PT')} €${userNotesSection}
 ${ineSection}
 ${comparablesSection}
@@ -1256,12 +1144,12 @@ serve(async (req) => {
     // 1. Fetch Imovirtual comparables + INE market data in parallel
     console.log('Starting parallel fetch: Imovirtual + INE')
     const [comparables, ineData] = await Promise.all([
-      fetchImovirtualListings(address, typology, area),
+      fetchImovirtualListings(address, typology),
       fetchINEMarketData(address),
     ])
 
     // 2. Market stats from Imovirtual listings (raw ASKING prices)
-    const marketStats = calcMarketStats(comparables, area)
+    const marketStats = calcMarketStats(comparables)
 
     // 3. Transaction valuation — Claude triangulates a realistic sale value from the
     // asking comparables + INE benchmark + condition (NOT a blind haircut). The raw
@@ -1287,7 +1175,7 @@ serve(async (req) => {
       createdAt: new Date().toISOString(),
     }
 
-    // 6. Save to DB (best-effort)
+    // 7. Save to DB (best-effort)
     if (supabaseUrl && supabaseKey) {
       const db = createClient(supabaseUrl, supabaseKey)
       await db.from('analyses').insert({

@@ -1,5 +1,5 @@
 import { useState, useMemo } from 'react'
-import { ArrowLeft, ExternalLink, TrendingDown, TrendingUp, Minus, Trophy, BarChart2, Calculator, Building2, MapPin, Info, Ruler, Clock, Home } from 'lucide-react'
+import { ArrowLeft, ExternalLink, TrendingDown, TrendingUp, Minus, Trophy, BarChart2, Calculator, Building2, MapPin, Info, Ruler, Clock, Home, AlertTriangle } from 'lucide-react'
 import type { AnalysisResult, VerdictType, Valuation } from '../lib/types'
 import { formatCurrency, formatPercent } from '../lib/financial'
 
@@ -191,83 +191,98 @@ export default function ResultsView({ result, onBack }: Props) {
         </div>
       </section>
 
-      {/* ── 2. MERCADO LOCAL ── */}
-      {comparables.length > 0 && (
-        <section id="market">
-          <SectionLabel icon={<MapPin size={13}/>}>Mercado local · Imovirtual</SectionLabel>
-          <div className="card">
+      {/* ── 2. SINAIS DE MERCADO ── */}
+      {(comparables.length > 0 || ineData) && (() => {
+        // Extract best available location label for the section header
+        const addrParts = property.address.split(',').map(s => s.trim()).filter(Boolean)
+        const locationLabel = addrParts.length >= 2
+          ? addrParts[addrParts.length - 2]
+          : ineData?.region || ''
 
-            {/* Disclaimer at top — compact one-liner */}
-            <div className="flex gap-1.5 mb-5 pb-4 border-b border-polar-line">
-              <Info size={12} className="text-polar-ink-muted/40 flex-shrink-0 mt-0.5" />
-              <p className="text-[10px] text-polar-ink-muted/55 leading-relaxed">
-                Preços de <strong className="font-medium">oferta</strong> activos no Imovirtual para tipologias próximas —
-                reflectem valores pedidos, não preços de transacção efectiva.
-              </p>
+        // Negotiation: how much below asking do transactions typically close (negative = room to negotiate)
+        const negotiationPct = (ineData && ineData.medianPricePerSqm > 0 && marketStats.medianPricePerSqm > 0)
+          ? ((ineData.medianPricePerSqm - marketStats.medianPricePerSqm) / marketStats.medianPricePerSqm) * 100
+          : null
+
+        // Supply badge
+        const supplyBadge = comparables.length < 10
+          ? { label: 'Limitada', className: 'text-blue-700 bg-blue-50 border-blue-200' }
+          : comparables.length <= 20
+          ? { label: 'Moderada', className: 'text-amber-700 bg-amber-50 border-amber-200' }
+          : { label: 'Alta',     className: 'text-red-600 bg-red-50 border-red-200' }
+
+        const supplyDesc = comparables.length < 10
+          ? 'Poucos imóveis à venda significa menos concorrência quando chegar a hora de vender após remodelação.'
+          : comparables.length <= 20
+          ? 'Oferta moderada na zona. Concorrência razoável no momento de revenda — preço e acabamentos vão fazer a diferença.'
+          : 'Muitos imóveis em oferta. Mais concorrência no momento de revenda — o imóvel precisa de se destacar.'
+
+        return (
+          <section id="market">
+            <SectionLabel icon={<MapPin size={13}/>}>
+              Sinais de mercado{locationLabel ? ` · ${locationLabel}` : ''}
+            </SectionLabel>
+            <div className="card space-y-5">
+
+              {/* ── Card 1: Negociação ── */}
+              {negotiationPct !== null && (
+                <SignalCard
+                  label="Negociação"
+                  value={`${negotiationPct.toFixed(0)}%`}
+                  valueColor="text-amber-900"
+                  badge={{ label: '— Estimativa', className: 'text-amber-800 bg-amber-50 border-amber-200' }}
+                  description="Diferença típica entre preço pedido e transacção real neste município. Indica espaço para negociar abaixo do valor pedido."
+                  footnote={
+                    <span className="flex items-start gap-1">
+                      <AlertTriangle size={11} className="flex-shrink-0 mt-0.5"/>
+                      Estimativa municipal (INE vs. Imovirtual) — não específica a esta tipologia ou zona exacta.
+                    </span>
+                  }
+                />
+              )}
+
+              {/* ── Card 2: Valorização a.a. ── */}
+              {ineData?.priceChangePct != null && (() => {
+                const pct = ineData.priceChangePct!
+                const up = pct > 0
+                const valBadge = up
+                  ? { label: '↗ Em alta',  className: 'text-emerald-700 bg-emerald-50 border-emerald-200' }
+                  : { label: '↘ Em baixa', className: 'text-red-600 bg-red-50 border-red-200' }
+                const valDesc = pct >= 15
+                  ? 'O mercado desta zona está a valorizar a um ritmo acelerado. Bom sinal para revenda após obras.'
+                  : pct >= 5
+                  ? 'Valorização moderada e consistente. Tendência positiva para revenda no médio prazo.'
+                  : pct >= 0
+                  ? 'Valorização lenta. O timing de saída será importante para garantir margem.'
+                  : 'Mercado em desvalorização. Reavalie o horizonte de saída e o preço de compra.'
+                return (
+                  <SignalCard
+                    label="Valorização A.A."
+                    value={`${up ? '+' : ''}${pct.toFixed(0)}%`}
+                    valueColor={up ? 'text-emerald-700' : 'text-red-600'}
+                    badge={valBadge}
+                    description={valDesc}
+                    footnote={<span className="flex items-center gap-1"><Info size={11}/> Fonte: INE Portugal · {ineData.region} · {ineData.period}.</span>}
+                  />
+                )
+              })()}
+
+              {/* ── Card 3: Oferta activa ── */}
+              {comparables.length > 0 && (
+                <SignalCard
+                  label="Oferta activa"
+                  value={String(comparables.length)}
+                  valueColor="text-blue-700"
+                  badge={{ label: supplyBadge.label, className: `${supplyBadge.className} flex items-center gap-1`, icon: <Building2 size={11}/> }}
+                  description={supplyDesc}
+                  footnote={<span className="flex items-center gap-1"><Info size={11}/> Fonte: Imovirtual · {property.typology} · raio 5km · activos há menos de 18 meses.</span>}
+                />
+              )}
+
             </div>
-
-            {/* Three stats */}
-            <div className="grid grid-cols-3 gap-2 sm:gap-6 mb-5">
-              <div>
-                <div className="text-[10px] sm:text-xs text-polar-ink-muted mb-1">Mediana de oferta</div>
-                <div className="text-lg sm:text-2xl font-bold text-polar-ink">
-                  {formatCurrency(marketStats.medianPricePerSqm)}<span className="text-xs sm:text-sm font-normal text-polar-ink-muted">/m²</span>
-                </div>
-              </div>
-              <div className="text-center">
-                <div className="text-[10px] sm:text-xs text-polar-ink-muted mb-1">Intervalo</div>
-                <div className="text-xs sm:text-sm font-semibold text-polar-ink">
-                  {formatCurrency(marketStats.min)} – {formatCurrency(marketStats.max)}<span className="font-normal text-polar-ink-muted">/m²</span>
-                </div>
-              </div>
-              <div className="text-right">
-                <div className="text-[10px] sm:text-xs text-polar-ink-muted mb-1">Anúncios activos</div>
-                <div className="text-lg sm:text-2xl font-bold text-polar-ink">{comparables.length}</div>
-              </div>
-            </div>
-
-            {/* INE regional comparison — asking vs transaction + YoY trend */}
-            {ineData && ineData.medianPricePerSqm > 0 && (() => {
-              const premium = ((marketStats.medianPricePerSqm - ineData.medianPricePerSqm) / ineData.medianPricePerSqm) * 100
-              return (
-                <div className="rounded-lg bg-polar-bg border border-polar-line p-3 flex flex-wrap sm:flex-nowrap items-center gap-3 sm:gap-5">
-                  {/* INE price */}
-                  <div className="flex-1 min-w-0">
-                    <div className="text-[10px] text-polar-ink-muted mb-0.5">
-                      INE · {ineData.region} · {ineData.period}
-                    </div>
-                    <div className="text-sm font-semibold text-polar-ink">
-                      {formatCurrency(ineData.medianPricePerSqm)}<span className="text-xs font-normal text-polar-ink-muted">/m² (transação)</span>
-                    </div>
-                  </div>
-
-                  {/* Asking vs transaction premium */}
-                  <div className="text-right sm:border-l sm:border-polar-line sm:pl-5">
-                    <div className="text-[10px] text-polar-ink-muted mb-0.5">Oferta vs. transação</div>
-                    <div className={`text-sm font-semibold ${premium > 15 ? 'text-amber-600' : 'text-emerald-600'}`}>
-                      {premium > 0 ? '+' : ''}{premium.toFixed(0)}%
-                    </div>
-                  </div>
-
-                  {/* YoY change */}
-                  {ineData.priceChangePct != null && (
-                    <div className="text-right sm:border-l sm:border-polar-line sm:pl-5">
-                      <div className="text-[10px] text-polar-ink-muted mb-0.5">Variação a.a.</div>
-                      <div className={`text-sm font-semibold flex items-center justify-end gap-1 ${
-                        ineData.priceChangePct > 0 ? 'text-emerald-600' : 'text-red-500'
-                      }`}>
-                        {ineData.priceChangePct > 0 ? <TrendingUp size={11}/> : <TrendingDown size={11}/>}
-                        {ineData.priceChangePct > 0 ? '+' : ''}{ineData.priceChangePct.toFixed(1)}%
-                      </div>
-                    </div>
-                  )}
-                </div>
-              )
-            })()}
-
-          </div>
-        </section>
-      )}
+          </section>
+        )
+      })()}
 
       {/* ── 3. ANÁLISE FINANCEIRA ── */}
       <section id="financial">
@@ -524,6 +539,35 @@ function ColLabel({ children }: { children: React.ReactNode }) {
   )
 }
 
+
+function SignalCard({ label, value, valueColor, badge, description, footnote }: {
+  label: string
+  value: string
+  valueColor: string
+  badge: { label: string; className: string; icon?: React.ReactNode }
+  description: string
+  footnote: React.ReactNode
+}) {
+  return (
+    <div className="flex gap-5 pt-5 first:pt-0 border-t border-polar-line first:border-0">
+      {/* Left: metric */}
+      <div className="w-36 flex-shrink-0">
+        <div className="text-[10px] font-semibold text-polar-ink-muted uppercase tracking-wider mb-2">{label}</div>
+        <div className={`text-4xl font-bold mb-3 ${valueColor}`}>{value}</div>
+        <span className={`inline-flex items-center gap-1 text-xs font-semibold px-2.5 py-1 rounded-full border ${badge.className}`}>
+          {badge.icon}{badge.label}
+        </span>
+      </div>
+      {/* Divider */}
+      <div className="w-px bg-polar-line flex-shrink-0" />
+      {/* Right: explanation */}
+      <div className="flex-1 min-w-0">
+        <p className="text-sm text-polar-ink leading-relaxed mb-3">{description}</p>
+        <p className="text-[10px] text-polar-ink-muted/70 leading-relaxed">{footnote}</p>
+      </div>
+    </div>
+  )
+}
 
 function FinRow({ label, value, neg, bold, highlight, positive }: {
   label: string; value: string; neg?: boolean; bold?: boolean; highlight?: boolean; positive?: boolean
