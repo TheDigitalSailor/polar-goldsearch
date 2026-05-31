@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from 'react'
 import { Search, Euro, ArrowRight, ArrowLeft, MapPin, Loader2 } from 'lucide-react'
 import type { PropertyInput, Typology, Condition } from '../lib/types'
+import { supabase } from '../lib/supabase'
 
 interface Props {
   onSubmit: (data: PropertyInput) => void
@@ -78,75 +79,18 @@ function formatNominatimAddress(r: NominatimResult): string {
 /** True if query looks like a Portuguese postal code (full or partial): XXXX or XXXX-XXX */
 const isPostalCode = (q: string) => /^\d{4}(-\d{0,3})?$/.test(q.trim())
 
-/** Resolve a Portuguese postal code via geoapi.pt (free, no key).
- *  Response is a single object with top-level locality fields,
- *  a `partes` array (streets with `Artéria` key) and a `ruas` flat array.
- *  Falls back to Nominatim if the service is unavailable.
- */
+/** Resolve a Portuguese postal code via our postal-lookup edge function, which
+ *  proxies geoapi.pt server-side (API key kept secret, results cached). Returns
+ *  street-level suggestions for the código postal, or [] if none. */
 async function lookupPostalCode(cp: string): Promise<NominatimResult[]> {
-  const normalized = cp.trim()
-  // For API calls, prefer the full "XXXX-XXX" format; otherwise just the 4 digits
-  const apiCode = /^\d{4}-\d{3}$/.test(normalized)
-    ? normalized
-    : normalized.replace(/\D/g, '').slice(0, 4)
-
-  // Stage 1 — geoapi.pt
   try {
-    const res = await fetch(`/api/geoapi/cp/${encodeURIComponent(apiCode)}`)
-    if (res.ok) {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const data = await res.json() as any
-      const locality     = String(data?.Localidade || data?.['Designação Postal'] || '')
-      const municipality = String(data?.Concelho   || data?.municipio             || '')
-      const district     = String(data?.Distrito   || '')
-
-      // ── Try partes[].Artéria (nicely cased) ──────────────────────────────
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const partes: any[] = Array.isArray(data?.partes) ? data.partes : []
-      // Use bracket notation AND check all own keys containing 'rt' to survive
-      // any Unicode normalisation difference between the source file and the API
-      const partesStreets = [...new Set(
-        partes.map((p: any) => {
-          // Explicit key first; if empty try to find any key that looks like Artéria
-          const direct = String(p?.['Artéria'] || p?.Arteria || '')
-          if (direct) return direct
-          const key = Object.keys(p ?? {}).find(k => /art.ria/i.test(k))
-          return key ? String(p[key] || '') : ''
-        }).filter(Boolean)
-      )] as string[]
-
-      // ── Fall back to `ruas` flat array (uppercase, but always reliable) ──
-      const ruasArr: string[] = Array.isArray(data?.ruas)
-        ? (data.ruas as string[]).filter(Boolean)
-        : []
-
-      const streets = partesStreets.length > 0 ? partesStreets : ruasArr
-
-      if (streets.length > 0) {
-        return streets.slice(0, 5).map((street, i) => ({
-          place_id: i,
-          display_name: [street, locality, municipality, district].filter(Boolean).join(', '),
-          address: { road: street, suburb: locality, city: municipality, county: district, postcode: normalized },
-        }))
-      }
-
-      // No streets — return just the locality so the user can at least proceed
-      if (locality) {
-        return [{
-          place_id: 0,
-          display_name: [locality, municipality, district].filter(Boolean).join(', '),
-          address: { suburb: locality, city: municipality, county: district, postcode: normalized },
-        }]
-      }
-    }
-  } catch { /* fall through */ }
-
-  // Stage 2 — Nominatim fallback
-  try {
-    const url = `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(normalized + ', Portugal')}&format=json&limit=5&addressdetails=1`
-    const res = await fetch(url, { headers: { 'Accept-Language': 'pt-PT' } })
-    return await res.json()
-  } catch { return [] }
+    const { data, error } = await supabase.functions.invoke('postal-lookup', { body: { cp } })
+    if (error) return []
+    const results = (data as { results?: NominatimResult[] })?.results
+    return Array.isArray(results) ? results : []
+  } catch {
+    return []
+  }
 }
 
 function useAddressAutocomplete(query: string) {
