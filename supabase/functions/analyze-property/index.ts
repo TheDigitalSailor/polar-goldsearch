@@ -695,7 +695,7 @@ async function fetchImovirtualListings(
       const title = String(item?.title ?? 'Apartamento')
       const slug = item?.slug ?? ''
       const listingUrl = slug
-        ? `https://www.imovirtual.com/pt/ad/${slug}`
+        ? `https://www.imovirtual.com/pt/anuncio/${slug}`
         : undefined
 
       const location = String(

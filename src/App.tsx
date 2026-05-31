@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { Menu } from 'lucide-react'
 import Sidebar from './components/Sidebar'
 import AnalysisForm from './components/AnalysisForm'
@@ -7,6 +7,7 @@ import LoadingView from './components/LoadingView'
 import HistoryView from './components/HistoryView'
 import MarketTrendsView from './components/MarketTrendsView'
 import { analyzeProperty, deleteAnalysis, getAnalysisById, getAnalysisHistory, isMockMode, toggleMockMode, updateAnalysisAddress } from './lib/supabase'
+import { prefetchMarketData } from './lib/marketData'
 import type { AnalysisResult, AnalysisSummary, PropertyInput } from './lib/types'
 
 type Screen = 'form' | 'loading' | 'results' | 'history' | 'trends'
@@ -19,6 +20,9 @@ export default function App() {
   const [error, setError] = useState<string | null>(null)
   const [mockMode, setMockMode] = useState(isMockMode())
   const [sidebarOpen, setSidebarOpen] = useState(false)
+
+  // Warm the market-data cache once on app open so the Tendências tab is instant.
+  useEffect(() => { prefetchMarketData() }, [])
 
   function handleToggleMock() {
     toggleMockMode()

@@ -1,5 +1,5 @@
 import { useState, useMemo } from 'react'
-import { ArrowLeft, ExternalLink, TrendingDown, TrendingUp, Minus, Trophy, BarChart2, Calculator, Building2, MapPin, Info, Ruler, Clock } from 'lucide-react'
+import { ArrowLeft, ExternalLink, TrendingDown, TrendingUp, Minus, Trophy, BarChart2, Calculator, Building2, MapPin, Info, Ruler, Clock, Home } from 'lucide-react'
 import type { AnalysisResult, VerdictType, Valuation } from '../lib/types'
 import { formatCurrency, formatPercent } from '../lib/financial'
 
@@ -69,8 +69,11 @@ export default function ResultsView({ result, onBack }: Props) {
     : 0
 
   const range = (valuation.maxPricePerSqm - valuation.minPricePerSqm) || 1
-  const propertyBarPos = Math.min(95, Math.max(5, ((askingPricePerSqm - valuation.minPricePerSqm) / range) * 100))
-  const medianBarPos   = Math.min(95, Math.max(5, ((valuation.fairPricePerSqm - valuation.minPricePerSqm) / range) * 100))
+  // Extend bar 25% past max so the max dot lands at ~80% — leaves visual breathing room
+  const barRange = range * 1.25
+  const propertyBarPos = Math.min(93, Math.max(5, ((askingPricePerSqm - valuation.minPricePerSqm) / barRange) * 100))
+  const medianBarPos   = Math.min(93, Math.max(5, ((valuation.fairPricePerSqm - valuation.minPricePerSqm) / barRange) * 100))
+  const maxBarPos      = Math.min(93, Math.max(5, ((valuation.maxPricePerSqm - valuation.minPricePerSqm) / barRange) * 100))
 
   const isBelow = priceDiff < -5
   const isAbove = priceDiff > 5
@@ -100,81 +103,91 @@ export default function ResultsView({ result, onBack }: Props) {
       <section id="price">
         <SectionLabel icon={<BarChart2 size={13}/>}>Posicionamento de preço</SectionLabel>
         <div className="card">
-          {/* 3 price markers */}
-          <div className="grid grid-cols-3 gap-4 mb-7">
-            <PricePoint
-              icon="🟢"
-              label="Este imóvel"
-              price={formatCurrency(property.askingPrice)}
-              perSqm={`${formatCurrency(askingPricePerSqm)}/m²`}
-              color="text-emerald-600"
-              align="left"
-            />
-            <PricePoint
-              icon="🟡"
-              label="Valor justo (transação)"
-              price={formatCurrency(Math.round(valuation.fairPricePerSqm * property.area))}
-              perSqm={`${formatCurrency(valuation.fairPricePerSqm)}/m² mediana`}
-              color="text-amber-600"
-              align="center"
-            />
-            <PricePoint
-              icon="🔴"
-              label="Topo do mercado"
-              price={formatCurrency(Math.round(valuation.maxPricePerSqm * property.area))}
-              perSqm={`${formatCurrency(valuation.maxPricePerSqm)}/m² máximo`}
-              color="text-red-500"
-              align="right"
-            />
+
+          {/* 3 price columns */}
+          <div className="grid grid-cols-3 gap-4 mb-10">
+            <div>
+              <div className="text-[10px] font-semibold text-polar-ink-muted uppercase tracking-wider mb-2">Este imóvel</div>
+              <div className={`text-xl sm:text-2xl font-bold ${isBelow ? 'text-emerald-700' : isAbove ? 'text-red-600' : 'text-amber-600'}`}>
+                {formatCurrency(property.askingPrice)}
+              </div>
+              <div className="text-xs text-polar-ink-muted mt-0.5">{formatCurrency(askingPricePerSqm)}/m²</div>
+            </div>
+            <div className="text-center">
+              <div className="text-[10px] font-semibold text-polar-ink-muted uppercase tracking-wider mb-2">Preço médio</div>
+              <div className="text-xl sm:text-2xl font-bold text-amber-700">
+                {formatCurrency(Math.round(valuation.fairPricePerSqm * property.area))}
+              </div>
+              <div className="text-xs text-polar-ink-muted mt-0.5">{formatCurrency(valuation.fairPricePerSqm)}/m²</div>
+            </div>
+            <div className="text-right">
+              <div className="text-[10px] font-semibold text-polar-ink-muted uppercase tracking-wider mb-2">Preço máximo</div>
+              <div className="text-xl sm:text-2xl font-bold text-red-600">
+                {formatCurrency(Math.round(valuation.maxPricePerSqm * property.area))}
+              </div>
+              <div className="text-xs text-polar-ink-muted mt-0.5">{formatCurrency(valuation.maxPricePerSqm)}/m²</div>
+            </div>
           </div>
 
-          {/* Gradient bar */}
-          <div className="relative mb-10 mt-2">
-            {/* The bar */}
-            <div className="relative h-2.5 rounded-full bg-gradient-to-r from-emerald-400 via-amber-400 to-red-400">
+          {/* Bar with floating labels + markers */}
+          <div className="relative" style={{ paddingTop: '44px', marginBottom: '28px' }}>
 
-              {/* Median line — white stripe on the gradient */}
+            {/* Property label + connector line */}
+            <div className="absolute flex flex-col items-center" style={{ left: `${propertyBarPos}%`, top: 0, transform: 'translateX(-50%)' }}>
+              <span className="text-xs font-semibold text-polar-ink whitespace-nowrap">{formatCurrency(askingPricePerSqm)}/m²</span>
+              <div className="w-px bg-polar-ink/35 mt-1" style={{ height: '24px' }} />
+            </div>
+
+            {/* Median label + connector line */}
+            <div className="absolute flex flex-col items-center" style={{ left: `${medianBarPos}%`, top: 0, transform: 'translateX(-50%)' }}>
+              <span className="text-xs text-polar-ink-muted whitespace-nowrap">{formatCurrency(valuation.fairPricePerSqm)}/m²</span>
+              <div className="w-px bg-polar-ink/20 mt-1" style={{ height: '24px' }} />
+            </div>
+
+            {/* Max label + connector line */}
+            <div className="absolute flex flex-col items-center" style={{ left: `${maxBarPos}%`, top: 0, transform: 'translateX(-50%)' }}>
+              <span className="text-xs text-polar-ink-muted whitespace-nowrap">{formatCurrency(valuation.maxPricePerSqm)}/m²</span>
+              <div className="w-px bg-polar-ink/20 mt-1" style={{ height: '24px' }} />
+            </div>
+
+            {/* Gradient bar */}
+            <div className="relative h-3 rounded-full bg-gradient-to-r from-emerald-400 via-amber-400 to-red-500">
+
+              {/* Property marker — house icon circle */}
               <div
-                className="absolute top-1/2 -translate-y-1/2 -translate-x-1/2 w-0.5 h-5 bg-white/70 rounded-full"
+                className="absolute top-1/2 -translate-y-1/2 -translate-x-1/2 w-9 h-9 rounded-full bg-white border-2 border-emerald-600 shadow-sm flex items-center justify-center z-10"
+                style={{ left: `${propertyBarPos}%` }}
+              >
+                <Home size={15} className="text-emerald-600" />
+              </div>
+
+              {/* Median marker — small open circle */}
+              <div
+                className="absolute top-1/2 -translate-y-1/2 -translate-x-1/2 w-4 h-4 rounded-full bg-white border-2 border-amber-500 z-10"
                 style={{ left: `${medianBarPos}%` }}
               />
-            </div>
 
-            {/* Property dot + label — sits on top, outside the bar div so opacity is independent */}
-            <div
-              className="absolute -translate-x-1/2"
-              style={{ left: `${propertyBarPos}%`, top: '50%', transform: `translateX(-50%) translateY(-50%)` }}
-            >
-              {/* Label above */}
-              <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2.5 flex flex-col items-center pointer-events-none">
-                <div className="bg-polar-ink text-white text-[10px] font-semibold px-2 py-1 rounded-lg shadow-sm whitespace-nowrap">
-                  {formatCurrency(askingPricePerSqm)}/m²
-                </div>
-                <div className="w-1.5 h-1.5 bg-polar-ink rotate-45 -mt-[3px]" />
-              </div>
-              {/* White dot */}
-              <div className="w-5 h-5 rounded-full bg-white border-2 border-polar-ink/20 shadow-md" />
+              {/* Max marker — small open circle */}
+              <div
+                className="absolute top-1/2 -translate-y-1/2 -translate-x-1/2 w-4 h-4 rounded-full bg-white border-2 border-red-400 z-10"
+                style={{ left: `${maxBarPos}%` }}
+              />
             </div>
           </div>
 
-          <div className="flex justify-between items-center text-xs text-polar-ink-muted mb-2">
-            <span className="hidden sm:inline">Mín {formatCurrency(valuation.minPricePerSqm)}/m²</span>
-            <span className={`flex items-center gap-1 font-semibold text-sm ${
-              isBelow ? 'text-emerald-600' : isAbove ? 'text-red-500' : 'text-amber-600'
-            }`}>
-              {isBelow ? <TrendingDown size={13}/> : isAbove ? <TrendingUp size={13}/> : <Minus size={13}/>}
-              {priceDiff > 0 ? '+' : ''}{priceDiff.toFixed(1)}% vs. valor justo
+          {/* Bottom summary */}
+          <div className={`flex items-center gap-2 text-sm font-medium ${isBelow ? 'text-emerald-700' : isAbove ? 'text-red-600' : 'text-amber-600'}`}>
+            {isBelow ? <TrendingDown size={14}/> : isAbove ? <TrendingUp size={14}/> : <Minus size={14}/>}
+            <span>
+              Este imóvel está {Math.abs(priceDiff).toFixed(0)}%{' '}
+              {isBelow ? 'abaixo' : isAbove ? 'acima' : 'na'} da mediana
             </span>
-            <span className="hidden sm:inline">Máx {formatCurrency(valuation.maxPricePerSqm)}/m²</span>
+            <span className="text-polar-ink-muted font-normal">· {comparables.length} comparáveis activos na zona</span>
           </div>
-          <p className="text-xs text-polar-ink-muted/60 text-center">
-            {comparables.length} imóveis activos na zona · valor justo estimado por IA (transação, não preço pedido)
-          </p>
           {valuation.rationale && (
-            <p className="text-[10px] text-polar-ink-muted/50 text-center mt-1.5 max-w-md mx-auto leading-relaxed">
-              {valuation.rationale}
-            </p>
+            <p className="text-[10px] text-polar-ink-muted/50 mt-2 leading-relaxed">{valuation.rationale}</p>
           )}
+
         </div>
       </section>
 
@@ -422,7 +435,7 @@ export default function ResultsView({ result, onBack }: Props) {
               // Days-on-market display
               const domLabel = c.daysOnMarket <= 0 ? null
                 : c.daysOnMarket <= 1 ? 'Novo · 1 dia'
-                : `${c.daysOnMarket} dias`
+                : `${c.daysOnMarket} dias no mercado`
               const domColor = c.daysOnMarket <= 0 ? ''
                 : c.daysOnMarket < 90  ? 'text-emerald-600'
                 : c.daysOnMarket < 180 ? 'text-amber-600'
@@ -511,21 +524,6 @@ function ColLabel({ children }: { children: React.ReactNode }) {
   )
 }
 
-function PricePoint({ icon, label, price, perSqm, color, align = 'left' }: {
-  icon: string; label: string; price: string; perSqm: string; color: string; align?: 'left' | 'center' | 'right'
-}) {
-  const alignClass = align === 'center' ? 'text-center items-center' : align === 'right' ? 'text-right items-end' : 'text-left items-start'
-  return (
-    <div className={`p-1.5 sm:p-4 flex flex-col ${alignClass}`}>
-      <div className="flex items-center gap-1 sm:gap-1.5 mb-1 sm:mb-2">
-        <span className="text-xs sm:text-sm leading-none">{icon}</span>
-        <span className="text-[9px] sm:text-xs text-polar-ink-muted leading-tight">{label}</span>
-      </div>
-      <div className={`font-bold mb-0.5 ${color} ${align === 'center' ? 'text-sm sm:text-2xl' : 'text-xs sm:text-xl'}`}>{price}</div>
-      <div className="text-[9px] sm:text-xs text-polar-ink-muted leading-snug">{perSqm}</div>
-    </div>
-  )
-}
 
 function FinRow({ label, value, neg, bold, highlight, positive }: {
   label: string; value: string; neg?: boolean; bold?: boolean; highlight?: boolean; positive?: boolean

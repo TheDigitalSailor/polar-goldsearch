@@ -4,37 +4,10 @@ import {
   Tooltip, ResponsiveContainer, ReferenceLine, Cell,
 } from 'recharts'
 import { TrendingUp, TrendingDown, RefreshCw, AlertCircle } from 'lucide-react'
-import { supabase } from '../lib/supabase'
 import { formatCurrency } from '../lib/financial'
+import { loadMarketData, getCachedMarketData } from '../lib/marketData'
+import type { RegionData, MarketData } from '../lib/marketData'
 import PortugalMap from './PortugalMap'
-
-// ─── Types ────────────────────────────────────────────────────────────────────
-
-interface RegionData {
-  code: string
-  name: string
-  group: string
-  median: number
-  medianNew: number
-  medianExisting: number
-  yoy: number | null
-}
-
-interface TrendPoint {
-  quarter: string
-  code: string
-  median: number
-  medianNew: number
-  medianExisting: number
-}
-
-interface MarketData {
-  updatedAt: string
-  latestPeriod: string
-  national: RegionData
-  regions: RegionData[]
-  trend: TrendPoint[]
-}
 
 // ─── Custom tooltip ───────────────────────────────────────────────────────────
 
@@ -111,17 +84,18 @@ function KpiSkeleton() {
 // ─── Main component ───────────────────────────────────────────────────────────
 
 export default function MarketTrendsView() {
-  const [data, setData] = useState<MarketData | null>(null)
-  const [loading, setLoading] = useState(true)
+  // Seed from cache so revisiting the tab renders instantly (no spinner).
+  const cached = getCachedMarketData()
+  const [data, setData] = useState<MarketData | null>(cached)
+  const [loading, setLoading] = useState(!cached)
   const [error, setError] = useState<string | null>(null)
 
-  async function load() {
-    setLoading(true)
+  async function load(force = false) {
+    if (force || !data) setLoading(true)
     setError(null)
     try {
-      const { data: raw, error: err } = await supabase.functions.invoke('market-data')
-      if (err) throw new Error(err.message)
-      setData(raw as MarketData)
+      const md = await loadMarketData(force)
+      setData(md)
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Erro ao carregar dados')
     } finally {
@@ -129,6 +103,7 @@ export default function MarketTrendsView() {
     }
   }
 
+  // On mount, resolve from cache (instant) or fetch if empty/stale.
   useEffect(() => { load() }, [])
 
   // ── Colour helper: green → amber → red based on value vs national median ──
@@ -159,7 +134,7 @@ export default function MarketTrendsView() {
             <span className="text-xs text-polar-ink-muted/60">{data.latestPeriod}</span>
           )}
           <button
-            onClick={load}
+            onClick={() => load(true)}
             disabled={loading}
             className="flex items-center gap-1.5 text-xs font-medium text-polar-ink-muted hover:text-polar-ink border border-polar-line rounded-lg px-3 py-1.5 hover:bg-polar-bg transition-colors disabled:opacity-40"
           >
