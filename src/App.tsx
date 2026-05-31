@@ -6,11 +6,13 @@ import ResultsView from './components/ResultsView'
 import LoadingView from './components/LoadingView'
 import HistoryView from './components/HistoryView'
 import MarketTrendsView from './components/MarketTrendsView'
+import RadarView from './components/RadarView'
+import SavedView from './components/SavedView'
 import { analyzeProperty, deleteAnalysis, getAnalysisById, getAnalysisHistory, isMockMode, toggleMockMode, updateAnalysisAddress } from './lib/supabase'
 import { prefetchMarketData } from './lib/marketData'
 import type { AnalysisResult, AnalysisSummary, PropertyInput } from './lib/types'
 
-type Screen = 'form' | 'loading' | 'results' | 'history' | 'trends'
+type Screen = 'form' | 'loading' | 'results' | 'history' | 'trends' | 'radar' | 'saved'
 
 export default function App() {
   const [screen, setScreen] = useState<Screen>('form')
@@ -178,6 +180,8 @@ export default function App() {
           />
         )}
         {screen === 'trends' && <MarketTrendsView />}
+        {screen === 'radar' && <RadarView />}
+        {screen === 'saved' && <SavedView />}
       </main>
     </div>
   )

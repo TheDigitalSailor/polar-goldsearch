@@ -1,6 +1,6 @@
-import { Search, History, FlaskConical, Trophy, BarChart2, Calculator, Building2, X, TrendingUp } from 'lucide-react'
+import { Search, History, FlaskConical, Trophy, BarChart2, Calculator, Building2, X, TrendingUp, Radar, Heart } from 'lucide-react'
 
-type Screen = 'form' | 'loading' | 'results' | 'history' | 'trends'
+type Screen = 'form' | 'loading' | 'results' | 'history' | 'trends' | 'radar' | 'saved'
 
 interface Props {
   screen: Screen
@@ -88,6 +88,18 @@ export default function Sidebar({ screen, mockMode, onNavigate, onToggleMock, is
               active={screen === 'trends'}
               onClick={() => nav('trends')}
             />
+            <NavItem
+              icon={<Radar size={15}/>}
+              label="Radar"
+              active={screen === 'radar'}
+              onClick={() => nav('radar')}
+            />
+            <NavItem
+              icon={<Heart size={15}/>}
+              label="Guardados"
+              active={screen === 'saved'}
+              onClick={() => nav('saved')}
+            />
           </>
         ) : (
           <>
@@ -117,6 +129,18 @@ export default function Sidebar({ screen, mockMode, onNavigate, onToggleMock, is
               label="Tendências"
               active={false}
               onClick={() => nav('trends')}
+            />
+            <NavItem
+              icon={<Radar size={15}/>}
+              label="Radar"
+              active={false}
+              onClick={() => nav('radar')}
+            />
+            <NavItem
+              icon={<Heart size={15}/>}
+              label="Guardados"
+              active={false}
+              onClick={() => nav('saved')}
             />
           </>
         )}
