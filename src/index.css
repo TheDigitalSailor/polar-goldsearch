@@ -46,6 +46,48 @@
   }
 }
 
+/* ── Range slider (used in RadarFilters) ── */
+.range-slider-input {
+  -webkit-appearance: none;
+  appearance: none;
+  background: transparent;
+  pointer-events: none;
+  /* height comes from inline style on each input so the container controls it */
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+.range-slider-input::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: var(--polar-purple);
+  border: none;
+  cursor: pointer;
+  pointer-events: auto;
+  box-shadow: 0 1px 4px rgba(74, 25, 66, 0.30);
+  /* webkit places thumb top at input top when appearance:none — pull up to centre */
+  margin-top: -6px;
+}
+.range-slider-input::-moz-range-thumb {
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: var(--polar-purple);
+  border: none;
+  cursor: pointer;
+  pointer-events: auto;
+  box-shadow: 0 1px 4px rgba(74, 25, 66, 0.30);
+}
+.range-slider-input::-webkit-slider-runnable-track { background: transparent; height: 4px; }
+.range-slider-input::-moz-range-track { background: transparent; height: 4px; }
+
 /* ── Component classes (no custom color tokens in @apply) ── */
 @layer components {
 

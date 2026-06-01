@@ -6,6 +6,7 @@ import {
   type RadarListing, type RadarRun,
 } from '../lib/radar'
 import RadarCard from './RadarCard'
+import RadarFilters, { DEFAULT_FILTERS, applyFilters, type FilterState } from './RadarFilters'
 
 function sortForFeed(a: RadarListing, b: RadarListing): number {
   // Price drops first, then recently-found, then cheapest €/m².
@@ -20,6 +21,7 @@ export default function RadarView({ onSavedChange }: { onSavedChange?: () => voi
   const [loading, setLoading] = useState(true)
   const [running, setRunning] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [filters, setFilters] = useState<FilterState>(DEFAULT_FILTERS)
   const didInit = useRef(false)
 
   async function refresh() {
@@ -64,14 +66,13 @@ export default function RadarView({ onSavedChange }: { onSavedChange?: () => voi
 
   async function toggleSave(l: RadarListing) {
     const next = l.status === 'saved' ? 'seen' : 'saved'
-    // Stays in the feed; only the heart state changes.
     setListings((prev) => prev.map((x) => (x.id === l.id ? { ...x, status: next } : x)))
     try { await setListingStatus(l.id, next) } catch { /* best-effort */ }
     onSavedChange?.()
   }
 
   async function discard(l: RadarListing) {
-    setListings((prev) => prev.filter((x) => x.id !== l.id)) // optimistic — leaves the feed
+    setListings((prev) => prev.filter((x) => x.id !== l.id))
     try { await discardListing(l.id) } catch { /* best-effort */ }
     if (l.status === 'saved') onSavedChange?.()
   }
@@ -79,12 +80,16 @@ export default function RadarView({ onSavedChange }: { onSavedChange?: () => voi
   const strong = listings.filter((l) => l.tier === 'strong').sort(sortForFeed)
   const investigate = listings.filter((l) => l.tier === 'investigate').sort(sortForFeed)
 
+  const filteredStrong = applyFilters(strong, filters)
+  const filteredInvestigate = applyFilters(investigate, filters)
+  const totalVisible = filteredStrong.length + filteredInvestigate.length
+
   const lastRunLabel = lastRun
     ? new Date(lastRun.runAt).toLocaleString('pt-PT', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' })
     : '—'
 
   return (
-    <div className="max-w-5xl mx-auto px-4 sm:px-6 py-6 sm:py-10 space-y-8">
+    <div className="max-w-5xl mx-auto px-4 sm:px-6 py-6 sm:py-10 space-y-6">
       {/* Header */}
       <div className="flex items-start justify-between gap-4">
         <div>
@@ -125,22 +130,44 @@ export default function RadarView({ onSavedChange }: { onSavedChange?: () => voi
         </div>
       ) : (
         <>
-          <Section
-            icon={<Flame size={15} className="text-emerald-600" />}
-            title="Oportunidades fortes"
-            sub="Abaixo da mediana de €/m² da zona"
-            listings={strong}
-            onToggleSave={toggleSave}
-            onDiscard={discard}
+          {/* Filter bar */}
+          <RadarFilters
+            filters={filters}
+            onChange={setFilters}
+            totalVisible={totalVisible}
           />
-          <Section
-            icon={<Eye size={15} className="text-amber-600" />}
-            title="Vale investigar"
-            sub="Entre a mediana e +25%"
-            listings={investigate}
-            onToggleSave={toggleSave}
-            onDiscard={discard}
-          />
+
+          {/* Empty state when all listings are filtered out */}
+          {totalVisible === 0 ? (
+            <div className="text-center py-16 text-polar-ink-muted text-sm space-y-3">
+              <p>Nenhum imóvel encontrado com estes filtros.</p>
+              <button
+                onClick={() => setFilters({ ...DEFAULT_FILTERS })}
+                className="text-xs text-polar-purple hover:underline font-medium"
+              >
+                Limpar filtros
+              </button>
+            </div>
+          ) : (
+            <>
+              <Section
+                icon={<Flame size={15} className="text-emerald-600" />}
+                title="Oportunidades fortes"
+                sub="Abaixo da mediana de €/m² da zona"
+                listings={filteredStrong}
+                onToggleSave={toggleSave}
+                onDiscard={discard}
+              />
+              <Section
+                icon={<Eye size={15} className="text-amber-600" />}
+                title="Vale investigar"
+                sub="Entre a mediana e +25%"
+                listings={filteredInvestigate}
+                onToggleSave={toggleSave}
+                onDiscard={discard}
+              />
+            </>
+          )}
         </>
       )}
     </div>
