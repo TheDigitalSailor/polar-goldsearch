@@ -1,5 +1,5 @@
 import { useState, useMemo } from 'react'
-import { ArrowLeft, ExternalLink, TrendingDown, TrendingUp, Minus, Trophy, BarChart2, Calculator, Building2, MapPin, Info, Ruler, Clock, Home, AlertTriangle, ChevronDown } from 'lucide-react'
+import { ArrowLeft, ExternalLink, TrendingDown, TrendingUp, Minus, Trophy, BarChart2, Calculator, Building2, MapPin, Info, Ruler, Clock, Home, AlertTriangle, ChevronDown, FileDown } from 'lucide-react'
 import type { AnalysisResult, VerdictType, Valuation } from '../lib/types'
 import { formatCurrency, formatPercent } from '../lib/financial'
 
@@ -33,6 +33,25 @@ export default function ResultsView({ result, onBack, onEdit }: Props) {
 
   // ── Rationale tooltip state ───────────────────────────────────────────────
   const [showRationale, setShowRationale] = useState(false)
+  const [exporting, setExporting] = useState(false)
+
+  const [exportError, setExportError] = useState<string | null>(null)
+
+  async function handleExport(e: React.MouseEvent) {
+    e.preventDefault()
+    e.stopPropagation()
+    setExporting(true)
+    setExportError(null)
+    try {
+      const { exportAnalysisPdf } = await import('../lib/exportPdf')
+      await exportAnalysisPdf(result)
+    } catch (err) {
+      console.error('PDF export failed', err)
+      setExportError(err instanceof Error ? err.message : 'Erro ao gerar PDF')
+    } finally {
+      setExporting(false)
+    }
+  }
 
   // ── Sale price slider + custom verdict state ──────────────────────────────
   const [salePrice, setSalePrice] = useState(financial.estimatedSalePrice)
@@ -152,12 +171,27 @@ export default function ResultsView({ result, onBack, onEdit }: Props) {
           >
             <ArrowLeft size={14} /> Nova análise
           </button>
-          <button
-            onClick={onEdit}
-            className="flex items-center gap-1.5 text-sm text-polar-ink-muted hover:text-polar-ink border border-polar-line hover:border-polar-ink/30 px-2.5 py-1 rounded-lg transition-colors"
-          >
-            Editar detalhes
-          </button>
+          <div className="flex flex-col items-end gap-1">
+            <div className="flex items-center gap-2">
+              <button
+                onClick={onEdit}
+                className="flex items-center gap-1.5 text-sm text-polar-ink-muted hover:text-polar-ink border border-polar-line hover:border-polar-ink/30 px-2.5 py-1 rounded-lg transition-colors"
+              >
+                Editar detalhes
+              </button>
+              <button
+                type="button"
+                onClick={handleExport}
+                disabled={exporting}
+                className="flex items-center gap-1.5 text-xs font-medium text-white bg-polar-purple hover:bg-polar-purple-light px-3 py-1.5 rounded-lg transition-colors disabled:opacity-50"
+              >
+                {exporting ? 'A gerar PDF…' : <><FileDown size={13} /> Exportar PDF</>}
+              </button>
+            </div>
+            {exportError && (
+              <p className="text-xs text-red-500">{exportError}</p>
+            )}
+          </div>
         </div>
         <h2 className="text-lg sm:text-2xl font-semibold text-polar-ink leading-tight">
           {property.address}
