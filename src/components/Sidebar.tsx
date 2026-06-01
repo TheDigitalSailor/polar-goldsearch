@@ -5,6 +5,7 @@ type Screen = 'form' | 'loading' | 'results' | 'history' | 'trends' | 'radar' | 
 interface Props {
   screen: Screen
   mockMode: boolean
+  savedCount: number
   onNavigate: (screen: Screen) => void
   onToggleMock: () => void
   isOpen: boolean
@@ -22,7 +23,7 @@ function scrollTo(id: string) {
   document.getElementById(id)?.scrollIntoView({ behavior: 'smooth', block: 'start' })
 }
 
-export default function Sidebar({ screen, mockMode, onNavigate, onToggleMock, isOpen, onClose }: Props) {
+export default function Sidebar({ screen, mockMode, savedCount, onNavigate, onToggleMock, isOpen, onClose }: Props) {
   const isResults = screen === 'results'
 
   function nav(s: Screen) {
@@ -32,7 +33,7 @@ export default function Sidebar({ screen, mockMode, onNavigate, onToggleMock, is
 
   return (
     <aside className={`
-      w-56 flex flex-col py-5 border-r border-polar-line flex-shrink-0 bg-white
+      w-64 flex flex-col py-5 border-r border-polar-line flex-shrink-0 bg-white
       fixed inset-y-0 left-0 z-50 transition-transform duration-300 ease-in-out
       md:relative md:translate-x-0
       ${isOpen ? 'translate-x-0' : '-translate-x-full'}
@@ -78,26 +79,27 @@ export default function Sidebar({ screen, mockMode, onNavigate, onToggleMock, is
             />
             <NavItem
               icon={<History size={15}/>}
-              label="Histórico"
+              label="Histórico de análises"
               active={screen === 'history'}
               onClick={() => nav('history')}
             />
             <NavItem
               icon={<TrendingUp size={15}/>}
-              label="Tendências"
+              label="Tendências de mercado"
               active={screen === 'trends'}
               onClick={() => nav('trends')}
             />
             <NavItem
               icon={<Radar size={15}/>}
-              label="Radar"
+              label="Radar de oportunidades"
               active={screen === 'radar'}
               onClick={() => nav('radar')}
             />
             <NavItem
               icon={<Heart size={15}/>}
-              label="Guardados"
+              label="Oportunidades guardadas"
               active={screen === 'saved'}
+              badge={savedCount}
               onClick={() => nav('saved')}
             />
           </>
@@ -120,26 +122,27 @@ export default function Sidebar({ screen, mockMode, onNavigate, onToggleMock, is
             <div className="mx-2 my-2 border-t border-polar-line" />
             <NavItem
               icon={<History size={15}/>}
-              label="Histórico"
+              label="Histórico de análises"
               active={false}
               onClick={() => nav('history')}
             />
             <NavItem
               icon={<TrendingUp size={15}/>}
-              label="Tendências"
+              label="Tendências de mercado"
               active={false}
               onClick={() => nav('trends')}
             />
             <NavItem
               icon={<Radar size={15}/>}
-              label="Radar"
+              label="Radar de oportunidades"
               active={false}
               onClick={() => nav('radar')}
             />
             <NavItem
               icon={<Heart size={15}/>}
-              label="Guardados"
+              label="Oportunidades guardadas"
               active={false}
+              badge={savedCount}
               onClick={() => nav('saved')}
             />
           </>
@@ -169,9 +172,9 @@ export default function Sidebar({ screen, mockMode, onNavigate, onToggleMock, is
 }
 
 function NavItem({
-  icon, label, active, onClick,
+  icon, label, active, badge, onClick,
 }: {
-  icon: React.ReactNode; label: string; active: boolean; onClick: () => void
+  icon: React.ReactNode; label: string; active: boolean; badge?: number; onClick: () => void
 }) {
   return (
     <button
@@ -183,7 +186,16 @@ function NavItem({
       }`}
     >
       <span className={active ? 'text-white/80' : 'text-polar-ink-muted'}>{icon}</span>
-      {label}
+      <span className="flex items-center gap-1.5">
+        {label}
+        {badge != null && badge > 0 && (
+          <span className={`text-[10px] font-bold min-w-[18px] h-[18px] rounded-full flex items-center justify-center px-1 ${
+            active ? 'bg-white/20 text-white' : 'bg-polar-purple text-white'
+          }`}>
+            {badge > 99 ? '99+' : badge}
+          </span>
+        )}
+      </span>
     </button>
   )
 }

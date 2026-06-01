@@ -3,7 +3,7 @@ import { Heart, AlertCircle } from 'lucide-react'
 import { getSavedListings, setListingStatus, type RadarListing } from '../lib/radar'
 import RadarCard from './RadarCard'
 
-export default function SavedView() {
+export default function SavedView({ onSavedChange }: { onSavedChange?: () => void }) {
   const [listings, setListings] = useState<RadarListing[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -25,6 +25,7 @@ export default function SavedView() {
   async function unsave(l: RadarListing) {
     setListings((prev) => prev.filter((x) => x.id !== l.id)) // optimistic
     try { await setListingStatus(l.id, 'seen') } catch { /* best-effort */ }
+    onSavedChange?.()
   }
 
   return (

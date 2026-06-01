@@ -42,7 +42,7 @@ export interface RadarRunResult {
   runAt?: string
 }
 
-const STALE_MS = 6 * 60 * 60 * 1000 // auto-run if last run older than 6h
+const STALE_MS = 7 * 24 * 60 * 60 * 1000 // auto-run weekly (or on first ever open)
 
 // deno-lint-ignore no-explicit-any
 function mapRow(r: any): RadarListing {
@@ -96,12 +96,13 @@ export async function runRadar(): Promise<RadarRunResult> {
   return data as RadarRunResult
 }
 
-/** Active radar feed — strong + investigate, excluding saved/discarded. */
+/** Active radar feed — everything except listings the user dismissed. Saved
+ *  listings stay in the feed (shown with a filled heart). */
 export async function getRadarListings(): Promise<RadarListing[]> {
   const { data, error } = await supabase
     .from('radar_listings')
     .select('*')
-    .in('status', ['new', 'seen'])
+    .neq('status', 'discarded')
     .order('price_per_m2', { ascending: true })
   if (error) throw new Error(error.message)
   return (data ?? []).map(mapRow)
@@ -117,15 +118,28 @@ export async function getSavedListings(): Promise<RadarListing[]> {
   return (data ?? []).map(mapRow)
 }
 
+export async function getSavedCount(): Promise<number> {
+  const { count, error } = await supabase
+    .from('radar_listings')
+    .select('*', { count: 'exact', head: true })
+    .eq('status', 'saved')
+  if (error) return 0
+  return count ?? 0
+}
+
 export async function setListingStatus(id: string, status: RadarStatus): Promise<void> {
   const { error } = await supabase.from('radar_listings').update({ status }).eq('id', id)
   if (error) throw new Error(error.message)
 }
 
-/** Mark freshly-found listings as seen so they don't re-appear as "new" next visit. */
-export async function markListingsSeen(ids: string[]): Promise<void> {
-  if (!ids.length) return
-  await supabase.from('radar_listings').update({ status: 'seen' }).in('id', ids).eq('status', 'new')
+/** Permanently hide a listing from the radar feed (user dismissed it). */
+export async function discardListing(id: string): Promise<void> {
+  await setListingStatus(id, 'discarded')
+}
+
+/** True if the listing was first discovered in the last 3 days (drives the "Novo" badge). */
+export function isRecentlyFound(l: RadarListing): boolean {
+  return Date.now() - new Date(l.firstSeen).getTime() < 3 * 24 * 60 * 60 * 1000
 }
 
 /** Percentage price drop if the latest price change happened within 7 days, else null. */

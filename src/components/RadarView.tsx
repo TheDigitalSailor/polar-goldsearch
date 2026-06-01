@@ -2,18 +2,19 @@ import { useEffect, useRef, useState } from 'react'
 import { Radar as RadarIcon, RefreshCw, AlertCircle, Flame, Eye } from 'lucide-react'
 import {
   getRadarListings, getLastRadarRun, runRadar, isRunStale,
-  setListingStatus, markListingsSeen, recentPriceDropPct,
+  setListingStatus, discardListing, recentPriceDropPct, isRecentlyFound,
   type RadarListing, type RadarRun,
 } from '../lib/radar'
 import RadarCard from './RadarCard'
 
 function sortForFeed(a: RadarListing, b: RadarListing): number {
-  const pri = (l: RadarListing) => (recentPriceDropPct(l) !== null ? 0 : l.status === 'new' ? 1 : 2)
+  // Price drops first, then recently-found, then cheapest €/m².
+  const pri = (l: RadarListing) => (recentPriceDropPct(l) !== null ? 0 : isRecentlyFound(l) ? 1 : 2)
   const d = pri(a) - pri(b)
   return d !== 0 ? d : a.pricePerM2 - b.pricePerM2
 }
 
-export default function RadarView() {
+export default function RadarView({ onSavedChange }: { onSavedChange?: () => void }) {
   const [listings, setListings] = useState<RadarListing[]>([])
   const [lastRun, setLastRun] = useState<RadarRun | null>(null)
   const [loading, setLoading] = useState(true)
@@ -25,8 +26,6 @@ export default function RadarView() {
     const [list, run] = await Promise.all([getRadarListings(), getLastRadarRun()])
     setListings(list)
     setLastRun(run)
-    // Mark freshly-found listings as seen for next visit (keep "Novo" badge this session)
-    markListingsSeen(list.filter((l) => l.status === 'new').map((l) => l.id))
     return run
   }
 
@@ -64,8 +63,17 @@ export default function RadarView() {
   }, [])
 
   async function toggleSave(l: RadarListing) {
-    setListings((prev) => prev.filter((x) => x.id !== l.id)) // optimistic: leaves the feed
-    try { await setListingStatus(l.id, 'saved') } catch { /* best-effort */ }
+    const next = l.status === 'saved' ? 'seen' : 'saved'
+    // Stays in the feed; only the heart state changes.
+    setListings((prev) => prev.map((x) => (x.id === l.id ? { ...x, status: next } : x)))
+    try { await setListingStatus(l.id, next) } catch { /* best-effort */ }
+    onSavedChange?.()
+  }
+
+  async function discard(l: RadarListing) {
+    setListings((prev) => prev.filter((x) => x.id !== l.id)) // optimistic — leaves the feed
+    try { await discardListing(l.id) } catch { /* best-effort */ }
+    if (l.status === 'saved') onSavedChange?.()
   }
 
   const strong = listings.filter((l) => l.tier === 'strong').sort(sortForFeed)
@@ -85,6 +93,9 @@ export default function RadarView() {
           </h2>
           <p className="text-sm text-polar-ink-muted mt-1">
             Scanner automático de oportunidades no Imovirtual · até {(400000).toLocaleString('pt-PT')} €
+          </p>
+          <p className="text-xs text-polar-ink-muted/70 mt-0.5">
+            Atualiza automaticamente uma vez por semana — ou corre agora a qualquer momento.
           </p>
         </div>
         <div className="flex items-center gap-3 flex-shrink-0">
@@ -120,6 +131,7 @@ export default function RadarView() {
             sub="Abaixo da mediana de €/m² da zona"
             listings={strong}
             onToggleSave={toggleSave}
+            onDiscard={discard}
           />
           <Section
             icon={<Eye size={15} className="text-amber-600" />}
@@ -127,6 +139,7 @@ export default function RadarView() {
             sub="Entre a mediana e +25%"
             listings={investigate}
             onToggleSave={toggleSave}
+            onDiscard={discard}
           />
         </>
       )}
@@ -134,12 +147,13 @@ export default function RadarView() {
   )
 }
 
-function Section({ icon, title, sub, listings, onToggleSave }: {
+function Section({ icon, title, sub, listings, onToggleSave, onDiscard }: {
   icon: React.ReactNode
   title: string
   sub: string
   listings: RadarListing[]
   onToggleSave: (l: RadarListing) => void
+  onDiscard: (l: RadarListing) => void
 }) {
   return (
     <section>
@@ -154,7 +168,7 @@ function Section({ icon, title, sub, listings, onToggleSave }: {
       ) : (
         <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
           {listings.map((l) => (
-            <RadarCard key={l.id} listing={l} saved={false} onToggleSave={onToggleSave} />
+            <RadarCard key={l.id} listing={l} saved={l.status === 'saved'} onToggleSave={onToggleSave} onDiscard={onDiscard} />
           ))}
         </div>
       )}

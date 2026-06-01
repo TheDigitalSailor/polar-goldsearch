@@ -10,6 +10,7 @@ import RadarView from './components/RadarView'
 import SavedView from './components/SavedView'
 import { analyzeProperty, deleteAnalysis, getAnalysisById, getAnalysisHistory, isMockMode, toggleMockMode, updateAnalysisAddress } from './lib/supabase'
 import { prefetchMarketData } from './lib/marketData'
+import { getSavedCount } from './lib/radar'
 import type { AnalysisResult, AnalysisSummary, PropertyInput } from './lib/types'
 
 type Screen = 'form' | 'loading' | 'results' | 'history' | 'trends' | 'radar' | 'saved'
@@ -23,9 +24,17 @@ export default function App() {
   const [error, setError] = useState<string | null>(null)
   const [mockMode, setMockMode] = useState(isMockMode())
   const [sidebarOpen, setSidebarOpen] = useState(false)
+  const [savedCount, setSavedCount] = useState(0)
 
   // Warm the market-data cache once on app open so the Tendências tab is instant.
   useEffect(() => { prefetchMarketData() }, [])
+
+  // Fetch saved count on mount and whenever the saved screen is visited.
+  useEffect(() => {
+    getSavedCount().then(setSavedCount).catch(() => {})
+  }, [])
+
+  const refreshSavedCount = () => { getSavedCount().then(setSavedCount).catch(() => {}) }
 
   function handleToggleMock() {
     toggleMockMode()
@@ -97,6 +106,10 @@ export default function App() {
   }
 
   async function handleNavigate(s: Screen) {
+    // Refresh saved count when leaving the saved screen or navigating to it
+    if (screen === 'saved' || s === 'saved') {
+      getSavedCount().then(setSavedCount).catch(() => {})
+    }
     if (s === 'history') {
       setHistoryLoading(true)
       setScreen('history')
@@ -127,6 +140,7 @@ export default function App() {
       <Sidebar
         screen={screen}
         mockMode={mockMode}
+        savedCount={savedCount}
         onNavigate={handleNavigate}
         onToggleMock={handleToggleMock}
         isOpen={sidebarOpen}
@@ -180,8 +194,8 @@ export default function App() {
           />
         )}
         {screen === 'trends' && <MarketTrendsView />}
-        {screen === 'radar' && <RadarView />}
-        {screen === 'saved' && <SavedView />}
+        {screen === 'radar' && <RadarView onSavedChange={refreshSavedCount} />}
+        {screen === 'saved' && <SavedView onSavedChange={refreshSavedCount} />}
       </main>
     </div>
   )

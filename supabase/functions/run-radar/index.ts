@@ -37,7 +37,7 @@ const ROOMS_TO_TYPOLOGY: Record<string, string> = {
 // tiny €/m²) and obvious data errors that would otherwise corrupt the median.
 const MIN_AREA_M2 = 20
 const MAX_AREA_M2 = 800
-const MIN_PPM2 = 500
+const MIN_PPM2 = 300   // low enough to catch genuine bargains, high enough to exclude land/farms
 const MAX_PPM2 = 15000
 
 interface ScrapedListing {
@@ -261,7 +261,13 @@ serve(async (req) => {
       }
     }
 
-    if (toInsert.length) updates.push(Promise.resolve(db.from('radar_listings').insert(toInsert)))
+    // Upsert (not insert) so an overlapping run inserting the same listing_id can't
+    // crash the batch on the unique constraint.
+    if (toInsert.length) {
+      updates.push(Promise.resolve(
+        db.from('radar_listings').upsert(toInsert, { onConflict: 'listing_id', ignoreDuplicates: true }),
+      ))
+    }
     await Promise.all(updates)
 
     // 5. Log the run
