@@ -107,9 +107,20 @@ function useAddressAutocomplete(query: string) {
         if (isPostalCode(query)) {
           data = await lookupPostalCode(query)
         } else {
-          const url = `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(query + ', Portugal')}&countrycodes=pt&format=json&limit=6&addressdetails=1`
-          const res = await fetch(url, { headers: { 'Accept-Language': 'pt-PT' } })
-          data = await res.json()
+          const fetchNominatim = async (q: string) => {
+            const url = `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(q)}&countrycodes=pt&format=json&limit=6&addressdetails=1`
+            const res = await fetch(url, { headers: { 'Accept-Language': 'pt-PT' } })
+            return res.json() as Promise<NominatimResult[]>
+          }
+          data = await fetchNominatim(query + ', Portugal')
+          // Fallback: if full address returns nothing, retry with just the street
+          // so "Rua X, 15, Bairro Y" → "Rua X, Portugal"
+          if (data.length === 0) {
+            const street = query.split(',')[0].trim()
+            if (street.length > 4 && street !== query) {
+              data = await fetchNominatim(street + ', Portugal')
+            }
+          }
         }
         setResults(data.slice(0, 5))
       } catch { setResults([]) }
