@@ -1,5 +1,5 @@
 import { useState, useMemo } from 'react'
-import { ArrowLeft, ExternalLink, TrendingDown, TrendingUp, Minus, Trophy, BarChart2, Calculator, Building2, MapPin, Info, Ruler, Clock, Home, AlertTriangle, ChevronDown, FileDown, Pencil, Share2, Check } from 'lucide-react'
+import { ArrowLeft, ExternalLink, TrendingDown, TrendingUp, Minus, Trophy, BarChart2, Calculator, Building2, MapPin, Info, Ruler, Clock, Home, AlertTriangle, ChevronDown, FileDown, Pencil, Share2, Check, BedDouble } from 'lucide-react'
 import type { AnalysisResult, VerdictType, Valuation } from '../lib/types'
 import { formatCurrency, formatPercent } from '../lib/financial'
 
@@ -748,6 +748,11 @@ export default function ResultsView({ result, onBack, onEdit }: Props) {
                   {/* Specs + link */}
                   <div className="flex items-center justify-between gap-3">
                     <div className="flex items-center gap-3 text-xs text-polar-ink-muted">
+                      {c.rooms && (
+                        <span className="flex items-center gap-1 font-medium text-polar-ink">
+                          <BedDouble size={11}/> {roomsLabel(c.rooms)}
+                        </span>
+                      )}
                       <span className="flex items-center gap-1"><Ruler size={11}/> {c.area} m²</span>
                       {domLabel && (
                         <span className={`flex items-center gap-1 font-medium ${domColor}`}>
@@ -779,6 +784,13 @@ export default function ResultsView({ result, onBack, onEdit }: Props) {
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
+
+const ROOMS_TO_TYPOLOGY: Record<string, string> = {
+  ONE: 'T0', TWO: 'T1', THREE: 'T2', FOUR: 'T3', FIVE: 'T4', SIX: 'T5', SEVEN: 'T6+',
+}
+function roomsLabel(rooms: string): string {
+  return ROOMS_TO_TYPOLOGY[rooms] ?? rooms
+}
 
 function SectionLabel({ icon, children }: { icon: React.ReactNode; children: React.ReactNode }) {
   return (
