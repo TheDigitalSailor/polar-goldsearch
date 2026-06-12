@@ -38,6 +38,7 @@ interface NominatimResult {
   address: {
     house_number?: string
     road?: string
+    city_district?: string  // parish/borough in Portuguese cities (e.g. "Ajuda", "Belém")
     suburb?: string
     neighbourhood?: string
     quarter?: string
@@ -59,16 +60,13 @@ function formatNominatimAddress(r: NominatimResult): string {
   // Street + number
   if (a.road) parts.push(a.road + (a.house_number ? ' ' + a.house_number : ''))
 
-  // Neighbourhood / suburb
-  const hood = a.suburb || a.neighbourhood || a.quarter
+  // Parish/district/neighbourhood — city_district is the parish name in Portuguese cities
+  const hood = a.city_district || a.suburb || a.neighbourhood || a.quarter
   if (hood) parts.push(hood)
 
-  // City / town / village
+  // City / town / village — skip if identical to hood
   const city = a.city || a.town || a.village || a.municipality
-  if (city) parts.push(city)
-
-  // County/district
-  if (a.county) parts.push(a.county)
+  if (city && city !== hood) parts.push(city)
 
   // Fallback to trimmed display_name if we got nothing useful
   if (parts.length < 2) {

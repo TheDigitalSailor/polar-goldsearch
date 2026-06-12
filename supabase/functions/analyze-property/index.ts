@@ -539,15 +539,15 @@ async function fetchImovirtualListings(
 ): Promise<Comparable[]> {
   const cityPart = extractCity(address)  // used for location label in comparables
 
-  // Build candidate URL paths: most specific first, then progressively wider.
-  // e.g. "lisboa/lisboa/misericordia" → "lisboa/lisboa" → "lisboa" → "todo-o-pais"
+  // Build candidate URL paths: most specific first, widen at most to municipality
+  // (2-segment path). Never widen to district or todo-o-pais — those pull in
+  // properties 30-50 km away which skew the comparable set.
   const basePath = resolveImovirtualPath(address)
   const segments = basePath.split('/')
   const candidates: string[] = []
-  for (let len = segments.length; len >= 1; len--) {
+  for (let len = segments.length; len >= Math.min(2, segments.length); len--) {
     candidates.push(segments.slice(0, len).join('/'))
   }
-  candidates.push('todo-o-pais')
 
   let html = ''
   let usedPath = ''
@@ -927,13 +927,12 @@ Chama a ferramenta submeter_avaliacao com os valores.`
 
     const area = property.area as number
 
-    // Floor: the fair value must sit at least max(50 000 €, 15% of the asking-derived
-    // value) below the asking median — sellers list high, and we never want the headline
-    // "valor justo" to read like an unrealistic windfall. Scales with price size.
+    // Cap the fair value at a 10% discount from the asking median — asking prices in
+    // Portugal typically sit 8–12% above transaction prices. We use 10% as a realistic
+    // haircut without being overly punishing in sought-after neighbourhoods.
     if (marketStats.medianPricePerSqm > 0 && area > 0) {
       const askingMedianTotal = marketStats.medianPricePerSqm * area
-      const discount = Math.max(50000, askingMedianTotal * 0.15)
-      const ceilingPerSqm = Math.round(Math.max(0, askingMedianTotal - discount) / area)
+      const ceilingPerSqm = Math.round(askingMedianTotal * 0.90 / area)
       if (ceilingPerSqm > 0 && median > ceilingPerSqm) median = ceilingPerSqm
     }
 
@@ -967,10 +966,9 @@ function fallbackValuation(
   area: number,
 ): Valuation {
   if (marketStats.medianPricePerSqm > 0 && area > 0) {
-    // Same floor as the Claude path: at least max(50 000 €, 15%) below asking.
+    // Same 10% haircut as the Claude path.
     const askingMedianTotal = marketStats.medianPricePerSqm * area
-    const discount = Math.max(50000, askingMedianTotal * 0.15)
-    const median = Math.round(Math.max(0, askingMedianTotal - discount) / area)
+    const median = Math.round(askingMedianTotal * 0.90 / area)
     return {
       fairPricePerSqm: median,
       minPricePerSqm: Math.round(median * 0.90),
