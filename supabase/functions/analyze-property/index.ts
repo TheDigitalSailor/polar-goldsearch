@@ -461,8 +461,9 @@ const LOCATION_MAP: Array<{ path: string; names: string[] }> = [
   { path: 'portalegre/elvas',      names: ['elvas'] },
 ]
 
-/** Minimum comparables before widening the search scope */
-const MIN_COMPARABLES = 8
+/** Minimum comparables before widening the search scope.
+ *  Kept low so a parish with a handful of listings beats widening to the whole municipality. */
+const MIN_COMPARABLES = 4
 
 /**
  * Resolve a full address to the most specific Imovirtual location path.
@@ -515,12 +516,14 @@ function extractCity(address: string): string {
 // New search URL: /pt/resultados/comprar/apartamento/{district}/
 // Items live at: props.pageProps.data.searchAds.items
 
-/** Map Portuguese typology strings to Imovirtual's roomsNumber enum */
+/** Map Portuguese typology strings to Imovirtual's roomsNumber enum.
+ *  Each typology maps to its own room count + one adjacent to avoid pulling
+ *  T3-sized (150m²) apartments into T2 comparables. */
 const ROOMS_MAP: Record<string, string[]> = {
   T0: ['ONE'],
   T1: ['ONE', 'TWO'],
-  T2: ['TWO', 'THREE', 'FOUR'],
-  T3: ['THREE', 'FOUR', 'FIVE'],
+  T2: ['TWO', 'THREE'],
+  T3: ['THREE', 'FOUR'],
   'T4+': ['FOUR', 'FIVE', 'SIX', 'SEVEN'],
 }
 
@@ -536,6 +539,7 @@ const IMOV_HEADERS = {
 async function fetchImovirtualListings(
   address: string,
   typology: string,
+  targetArea: number,
 ): Promise<Comparable[]> {
   const cityPart = extractCity(address)  // used for location label in comparables
 
@@ -659,10 +663,17 @@ async function fetchImovirtualListings(
       return { title, price, area, pricePerSqm, daysOnMarket, url: listingUrl, location, rooms }
     })
     .filter((c): c is Comparable => c !== null)
-    .slice(0, 15)
 
-  console.log(`Imovirtual: returning ${mapped.length} comparables after rooms filter`)
-  return mapped
+  // Area filter: keep only properties within ±50% of the target area.
+  // Avoids comparing a 43m² studio with a 150m² T3 just because both are "T2".
+  // Fall back to unfiltered list if too few survive (< 3).
+  const areaMin = Math.round(targetArea * 0.50)
+  const areaMax = Math.round(targetArea * 1.65)
+  const areaFiltered = mapped.filter(c => c.area >= areaMin && c.area <= areaMax)
+  const final = areaFiltered.length >= 3 ? areaFiltered : mapped
+
+  console.log(`Imovirtual: ${mapped.length} after rooms filter, ${final.length} after area filter (target ${targetArea}m², range ${areaMin}–${areaMax}m²)`)
+  return final.slice(0, 15)
 }
 
 // ─── INE market data ──────────────────────────────────────────────────────────
@@ -1174,7 +1185,7 @@ serve(async (req) => {
     // 1. Fetch Imovirtual comparables + INE market data in parallel
     console.log('Starting parallel fetch: Imovirtual + INE')
     const [comparables, ineData] = await Promise.all([
-      fetchImovirtualListings(address, typology),
+      fetchImovirtualListings(address, typology, area),
       fetchINEMarketData(address),
     ])
 
