@@ -1,5 +1,5 @@
 import { useState, useMemo } from 'react'
-import { ArrowLeft, ExternalLink, TrendingDown, TrendingUp, Minus, Trophy, BarChart2, Calculator, Building2, MapPin, Info, Ruler, Clock, Home, AlertTriangle, ChevronDown, FileDown } from 'lucide-react'
+import { ArrowLeft, ExternalLink, TrendingDown, TrendingUp, Minus, Trophy, BarChart2, Calculator, Building2, MapPin, Info, Ruler, Clock, Home, AlertTriangle, ChevronDown, FileDown, Pencil } from 'lucide-react'
 import type { AnalysisResult, VerdictType, Valuation } from '../lib/types'
 import { formatCurrency, formatPercent } from '../lib/financial'
 
@@ -53,6 +53,26 @@ export default function ResultsView({ result, onBack, onEdit }: Props) {
     }
   }
 
+  // ── Editable purchase inputs ──────────────────────────────────────────────
+  const [localPurchasePrice, setLocalPurchasePrice] = useState(financial.purchasePrice)
+  const [localRenovationCost, setLocalRenovationCost] = useState(financial.renovationCost)
+
+  function calcIMT(price: number): number {
+    if (price <= 97064)  return price * 0.01
+    if (price <= 132774) return price * 0.02
+    if (price <= 181034) return price * 0.05
+    if (price <= 301688) return price * 0.07
+    if (price <= 578598) return price * 0.08
+    return price * 0.06
+  }
+
+  const localFinancial = useMemo(() => {
+    const imt = calcIMT(localPurchasePrice)
+    const stampDuty = localPurchasePrice * 0.008
+    const totalAcquisitionCost = localPurchasePrice + imt + stampDuty + financial.notaryFees + localRenovationCost
+    return { ...financial, purchasePrice: localPurchasePrice, renovationCost: localRenovationCost, imt, stampDuty, totalAcquisitionCost }
+  }, [localPurchasePrice, localRenovationCost, financial])
+
   // ── Sale price slider + custom verdict state ──────────────────────────────
   const [salePrice, setSalePrice] = useState(financial.estimatedSalePrice)
   const [committedSalePrice, setCommittedSalePrice] = useState<number | null>(null)
@@ -73,19 +93,19 @@ export default function ResultsView({ result, onBack, onEdit }: Props) {
     salePrice > financial.estimatedSalePrice * 1.03 ? 'text-emerald-600' :
     'text-amber-600'
 
-  // Recalculate sale-side figures when slider moves (verdict stays fixed)
+  // Recalculate sale-side figures when slider or purchase inputs change
   const adj = useMemo(() => {
     const agencyCommission = salePrice * 0.05
     const agencyVAT        = agencyCommission * 0.23
     const energyCertificate = financial.energyCertificate
-    const capitalGain      = salePrice - financial.totalAcquisitionCost
+    const capitalGain      = salePrice - localFinancial.totalAcquisitionCost
     const capitalGainsTax  = capitalGain > 0 ? capitalGain * 0.5 * 0.28 : 0
     const totalSaleCosts   = agencyCommission + agencyVAT + capitalGainsTax + energyCertificate
-    const netProfit        = salePrice - financial.totalAcquisitionCost - totalSaleCosts
-    const netMargin        = (netProfit / financial.totalAcquisitionCost) * 100
+    const netProfit        = salePrice - localFinancial.totalAcquisitionCost - totalSaleCosts
+    const netMargin        = (netProfit / localFinancial.totalAcquisitionCost) * 100
     return { agencyCommission, agencyVAT, capitalGainsTax, energyCertificate,
              totalSaleCosts, netProfit, netMargin }
-  }, [salePrice, financial])
+  }, [salePrice, localFinancial, financial])
 
   // Derive verdict type from a net margin (mirrors edge function thresholds)
   function marginToVerdict(m: number): VerdictType {
@@ -417,15 +437,32 @@ export default function ResultsView({ result, onBack, onEdit }: Props) {
           {/* Custos de compra */}
           <ColLabel>Custos de compra</ColLabel>
           <div className="divide-y divide-polar-line">
-            <FinRow label="Preço de compra"        value={formatCurrency(financial.purchasePrice)} />
-            <FinRow label={`IMT (${formatPercent((financial.imt / financial.purchasePrice) * 100)})`} value={formatCurrency(financial.imt)} neg />
-            <FinRow label="Imposto de Selo (0.8%)" value={formatCurrency(financial.stampDuty)} neg />
+            <EditableFinRow
+              label="Preço de compra"
+              value={localPurchasePrice}
+              onChange={setLocalPurchasePrice}
+              min={Math.round(property.askingPrice * 0.5)}
+              max={property.askingPrice}
+              step={5000}
+              gradient="from-red-400 to-green-400"
+            />
+            <FinRow label={`IMT (${formatPercent((localFinancial.imt / localPurchasePrice) * 100)})`} value={formatCurrency(localFinancial.imt)} neg />
+            <FinRow label="Imposto de Selo (0.8%)" value={formatCurrency(localFinancial.stampDuty)} neg />
             <FinRow label="Escritura e registos"   value={formatCurrency(financial.notaryFees)} neg />
-            {financial.renovationCost > 0 &&
-              <FinRow label="Obras" value={formatCurrency(financial.renovationCost)} neg />}
+            <EditableFinRow
+              label="Obras"
+              value={localRenovationCost}
+              onChange={setLocalRenovationCost}
+              min={0}
+              max={Math.max(150_000, Math.round(property.askingPrice * 0.4))}
+              step={2500}
+              gradient="from-green-400 to-red-400"
+              neg
+              zeroLabel="Sem obras"
+            />
           </div>
           <div className="border-t border-polar-line mt-2 pt-2">
-            <FinRow label="Total investido" value={formatCurrency(financial.totalAcquisitionCost)} bold />
+            <FinRow label="Total investido" value={formatCurrency(localFinancial.totalAcquisitionCost)} bold />
           </div>
 
           {/* ── Sale price slider ── */}
@@ -520,7 +557,7 @@ export default function ResultsView({ result, onBack, onEdit }: Props) {
                 <div>
                   <div className="text-polar-ink text-sm font-medium">Margem líquida sobre investimento</div>
                   <div className="text-polar-ink-muted text-xs mt-0.5">
-                    Lucro {formatCurrency(adj.netProfit)} · Investimento total {formatCurrency(financial.totalAcquisitionCost)}
+                    Lucro {formatCurrency(adj.netProfit)} · Investimento total {formatCurrency(localFinancial.totalAcquisitionCost)}
                   </div>
                 </div>
                 <span
@@ -891,6 +928,64 @@ function FinRow({ label, value, neg, bold, highlight, positive }: {
       }`}>
         {neg ? '− ' : ''}{value}
       </span>
+    </div>
+  )
+}
+
+function EditableFinRow({ label, value, onChange, min, max, step, gradient, neg, zeroLabel }: {
+  label: string
+  value: number
+  onChange: (v: number) => void
+  min: number
+  max: number
+  step: number
+  gradient: string
+  neg?: boolean
+  zeroLabel?: string
+}) {
+  const [open, setOpen] = useState(false)
+  const pct = Math.min(100, Math.max(0, ((value - min) / (max - min)) * 100))
+  const displayValue = value === 0 && zeroLabel ? zeroLabel : formatCurrency(value)
+
+  return (
+    <div className="py-2">
+      <div className="flex justify-between items-center">
+        <span className="text-sm text-polar-ink-muted">{label}</span>
+        <div className="flex items-center gap-2">
+          {neg && <span className="text-sm text-polar-ink-muted">−</span>}
+          <span className="text-sm font-medium text-polar-ink">{displayValue}</span>
+          <button
+            onClick={() => setOpen(o => !o)}
+            title="Editar"
+            className={`transition-colors ${open ? 'text-polar-purple' : 'text-polar-ink-muted hover:text-polar-purple'}`}
+          >
+            <Pencil size={12} />
+          </button>
+        </div>
+      </div>
+
+      {open && (
+        <div className="pt-3 pb-1">
+          <div className="relative h-8 flex items-center mb-2">
+            <div className={`absolute inset-x-0 top-1/2 -translate-y-1/2 h-2.5 rounded-full bg-gradient-to-r ${gradient}`} />
+            <input
+              type="range"
+              min={min} max={max} step={step}
+              value={value}
+              onChange={e => onChange(Number(e.target.value))}
+              className="absolute inset-0 w-full opacity-0 cursor-pointer z-10"
+            />
+            <div
+              className="absolute top-1/2 w-5 h-5 rounded-full bg-white border-2 border-polar-ink/25 shadow-md pointer-events-none z-20"
+              style={{ left: `${pct}%`, transform: 'translateX(-50%) translateY(-50%)' }}
+            />
+          </div>
+          <div className="flex justify-between text-[10px] text-polar-ink-muted/60">
+            <span>{formatCurrency(min)}</span>
+            <span>{formatCurrency(max)}</span>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
