@@ -122,7 +122,15 @@ function useAddressAutocomplete(query: string) {
             }
           }
         }
-        setResults(data.slice(0, 5))
+        // Deduplicate by formatted address so identical-looking options don't appear twice
+        const seen = new Set<string>()
+        const unique = data.filter(r => {
+          const label = formatNominatimAddress(r)
+          if (seen.has(label)) return false
+          seen.add(label)
+          return true
+        })
+        setResults(unique.slice(0, 5))
       } catch { setResults([]) }
       finally { setLoading(false) }
     }, 350)
