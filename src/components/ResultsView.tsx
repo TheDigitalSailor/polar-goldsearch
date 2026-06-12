@@ -1,5 +1,5 @@
 import { useState, useMemo } from 'react'
-import { ArrowLeft, ExternalLink, TrendingDown, TrendingUp, Minus, Trophy, BarChart2, Calculator, Building2, MapPin, Info, Ruler, Clock, Home, AlertTriangle, ChevronDown, FileDown, Pencil } from 'lucide-react'
+import { ArrowLeft, ExternalLink, TrendingDown, TrendingUp, Minus, Trophy, BarChart2, Calculator, Building2, MapPin, Info, Ruler, Clock, Home, AlertTriangle, ChevronDown, FileDown, Pencil, Share2, Check } from 'lucide-react'
 import type { AnalysisResult, VerdictType, Valuation } from '../lib/types'
 import { formatCurrency, formatPercent } from '../lib/financial'
 
@@ -34,8 +34,21 @@ export default function ResultsView({ result, onBack, onEdit }: Props) {
   // ── Rationale tooltip state ───────────────────────────────────────────────
   const [showRationale, setShowRationale] = useState(false)
   const [exporting, setExporting] = useState(false)
-
   const [exportError, setExportError] = useState<string | null>(null)
+  const [copied, setCopied] = useState(false)
+
+  async function handleShare() {
+    const url = result.id
+      ? `${window.location.origin}?id=${result.id}`
+      : window.location.href
+    try {
+      await navigator.clipboard.writeText(url)
+      setCopied(true)
+      setTimeout(() => setCopied(false), 2000)
+    } catch {
+      prompt('Copia este link:', url)
+    }
+  }
 
   async function handleExport(e: React.MouseEvent) {
     e.preventDefault()
@@ -198,6 +211,13 @@ export default function ResultsView({ result, onBack, onEdit }: Props) {
                 className="flex items-center gap-1.5 text-sm text-polar-ink-muted hover:text-polar-ink border border-polar-line hover:border-polar-ink/30 px-2.5 py-1 rounded-lg transition-colors"
               >
                 Editar detalhes
+              </button>
+              <button
+                type="button"
+                onClick={handleShare}
+                className="flex items-center gap-1.5 text-xs font-medium text-polar-ink-muted border border-polar-line hover:border-polar-ink/30 hover:text-polar-ink px-3 py-1.5 rounded-lg transition-colors"
+              >
+                {copied ? <><Check size={13} className="text-emerald-500" /> Copiado!</> : <><Share2 size={13} /> Partilhar</>}
               </button>
               <button
                 type="button"

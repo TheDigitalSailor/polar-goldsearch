@@ -1205,20 +1205,22 @@ serve(async (req) => {
       createdAt: new Date().toISOString(),
     }
 
-    // 7. Save to DB (best-effort)
+    // 7. Save to DB (best-effort) — get back the id so the client can build a share URL
+    let analysisId: string | undefined
     if (supabaseUrl && supabaseKey) {
       const db = createClient(supabaseUrl, supabaseKey)
-      await db.from('analyses').insert({
+      const { data: inserted } = await db.from('analyses').insert({
         address, typology, area,
         asking_price: askingPrice,
         verdict,
         net_margin: financial.netMargin,
         result,
         created_at: result.createdAt,
-      })
+      }).select('id').single()
+      analysisId = inserted?.id
     }
 
-    return new Response(JSON.stringify(result), {
+    return new Response(JSON.stringify({ ...result, id: analysisId }), {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
     })
   } catch (err) {

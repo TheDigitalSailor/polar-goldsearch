@@ -44,11 +44,11 @@ export async function deleteAnalysis(id: string): Promise<void> {
 export async function getAnalysisById(id: string): Promise<AnalysisResult> {
   const { data, error } = await supabase
     .from('analyses')
-    .select('result')
+    .select('id, result')
     .eq('id', id)
     .single()
   if (error) throw new Error(error.message)
-  return data.result as AnalysisResult
+  return { ...(data.result as AnalysisResult), id: data.id }
 }
 
 export async function getAnalysisHistory(): Promise<AnalysisSummary[]> {

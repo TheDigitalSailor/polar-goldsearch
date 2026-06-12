@@ -29,6 +29,16 @@ export default function App() {
   // Warm the market-data cache once on app open so the Tendências tab is instant.
   useEffect(() => { prefetchMarketData() }, [])
 
+  // On mount: if ?id= is in the URL, load that analysis directly (shared link)
+  useEffect(() => {
+    const id = new URLSearchParams(window.location.search).get('id')
+    if (!id) return
+    setScreen('loading')
+    getAnalysisById(id)
+      .then(data => { setResult(data); setScreen('results') })
+      .catch(() => { window.history.replaceState({}, '', '/'); setScreen('form') })
+  }, []) // eslint-disable-line react-hooks/exhaustive-deps
+
   // Fetch saved count on mount and whenever the saved screen is visited.
   useEffect(() => {
     getSavedCount().then(setSavedCount).catch(() => {})
@@ -49,6 +59,7 @@ export default function App() {
       const data = await analyzeProperty(property)
       setResult(data)
       setScreen('results')
+      if (data.id) window.history.pushState({}, '', `?id=${data.id}`)
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Erro desconhecido')
       setScreen('form')
@@ -105,7 +116,13 @@ export default function App() {
     }
   }
 
+  function handleBack() {
+    window.history.replaceState({}, '', '/')
+    setScreen('form')
+  }
+
   async function handleNavigate(s: Screen) {
+    window.history.replaceState({}, '', '/')
     // Refresh saved count when leaving the saved screen or navigating to it
     if (screen === 'saved' || s === 'saved') {
       getSavedCount().then(setSavedCount).catch(() => {})
@@ -178,7 +195,7 @@ export default function App() {
         {screen === 'results' && result && (
           <ResultsView
             result={result}
-            onBack={() => setScreen('form')}
+            onBack={handleBack}
             onEdit={handleEdit}
           />
         )}
